@@ -1,0 +1,199 @@
+({
+// for get all objects from org
+doinit : function(component, event, helper) {
+    helper.setupObjects(component);
+},
+//to handle change in object select
+handleSelectObj: function(component, event, helper){
+    helper.setUpObjectSelect(component);
+},
+handleChange: function(component, event, helper){
+    helper.displayData(component);
+},
+openModel : function(component, event, helper){
+    component.set("v.flag", true);
+},
+closeBtn : function(component, event , helper){
+    component.set("v.flag", false);
+    component.set("v.selectedFields", null);
+}, onNext: function(component, event, helper) {        
+    let pageNumber = component.get("v.currentPageNumber");
+    component.set("v.currentPageNumber", pageNumber + 1);
+    if(component.get("v.currentPageNumber") == component.get("v.totalPages")){
+        component.set("v.showRecordFrom", component.get("v.showRecordTo"));
+        component.set("v.showRecordTo", component.get("v.filteredData.length"));
+    }else{
+    component.set("v.showRecordFrom", component.get("v.showRecordTo"));
+    component.set("v.showRecordTo", parseInt(component.get("v.showRecordTo"))+parseInt(component.get("v.pageSize")));
+    }
+    helper.setPageDataAsPerPagination(component);
+},
+ 
+onPrev: function(component, event, helper) {        
+    let pageNumber = component.get("v.currentPageNumber");
+    component.set("v.currentPageNumber", pageNumber - 1);
+    if(component.get("v.currentPageNumber") == 1){
+        console.log('If');
+    component.set("v.showRecordFrom", 1);
+    component.set("v.showRecordTo", parseInt(component.get("v.showRecordTo"))-parseInt(component.get("v.pageSize")));
+    }
+    else if(component.get("v.currentPageNumber") == (parseInt(component.get("v.totalPages"))-1)){
+        console.log('Else If');
+        component.set("v.showRecordFrom", parseInt(component.get("v.showRecordFrom"))-parseInt(component.get("v.pageSize")));
+        component.set("v.showRecordTo",  parseInt(component.get("v.showRecordTo"))-parseInt(component.get("v.pageSize"))+1);
+        
+        }
+    else{
+        console.log('else');
+    component.set("v.showRecordFrom", parseInt(component.get("v.showRecordFrom"))-parseInt(component.get("v.pageSize")));
+    component.set("v.showRecordTo", parseInt(component.get("v.showRecordTo"))-parseInt(component.get("v.pageSize")));
+    }
+    helper.setPageDataAsPerPagination(component);
+},
+ 
+onFirst: function(component, event, helper) {        
+    component.set("v.currentPageNumber", 1);
+    component.set("v.showRecordFrom", 1);
+    component.set("v.showRecordTo", component.get("v.pageSize"));
+    helper.setPageDataAsPerPagination(component);
+},
+ 
+onLast: function(component, event, helper) {        
+    component.set("v.currentPageNumber", component.get("v.totalPages"));
+    component.set("v.showRecordFrom", parseInt(component.get("v.currentPageNumber"))*parseInt(component.get("v.pageSize"))-parseInt(component.get("v.pageSize")));
+    component.set("v.showRecordTo", component.get("v.filteredData.length"));
+    helper.setPageDataAsPerPagination(component);
+},
+onPageSizeChange: function(component, event, helper) {        
+    helper.preparePagination(component, component.get('v.filteredData'));
+},
+onChangeSearchPhrase : function (component, event, helper) {
+    console.log(component.get("v.searchPhrase"));
+    if ($A.util.isEmpty(component.get("v.searchPhrase"))) {
+        let allData = component.get("v.allData");
+        console.log(allData);
+        component.set("v.filteredData", allData);
+        helper.preparePagination(component, allData);
+    }
+},
+
+handleSearch : function (component, event, helper) {
+    console.log('In handleSearch!');
+    helper.searchRecordsBySearchPhrase(component);
+},
+
+})
+
+
+
+
+
+
+
+
+({
+setupObjects: function(component){
+var action = component.get("c.getAllObjects");
+
+action.setCallback(this, function(response){
+var state = response.getState();
+if(state === "SUCCESS"){
+var result = response.getReturnValue();
+component.set("v.objects", result);
+}
+});
+$A.enqueueAction(action);
+},
+setUpObjectSelect : function(component){
+    //var requiredfield = component.get("v.required");
+    var action = component.get("c.getAllFields");
+    action.setParams({
+        objName: component.get("v.selectedObject")
+    });
+    action.setCallback(this, function(response){
+        var state = response.getState();
+        console.log(state);
+        if(state === 'SUCCESS'){
+            var result = response.getReturnValue();
+            var fieldsList = [];
+            for(var key in result){
+                fieldsList.push({
+                    label: key,
+                    value: result[key]
+                });
+            }
+            component.set("v.tempList", result);
+            component.set("v.fields", fieldsList);
+            component.set("v.required", "Id");
+            component.set("v.selectedFields", null);
+        }
+    });
+    $A.enqueueAction(action);
+},
+displayData: function(component){
+    var fieldsNameandLabel = component.get("v.tempList");
+    var selectedOptionsList = component.get("v.selectedFields");
+    var fieldsName = [];
+    for(var key in selectedOptionsList){
+            fieldsName.push(selectedOptionsList[key]);
+    }
+    var action = component.get("c.sendDataResponse");
+    action.setParams({
+        fields : fieldsName,
+        objName : component.get("v.selectedObject")
+    });
+    action.setCallback(this, function(response){
+        var stage = response.getState();
+        if(stage === "SUCCESS"){
+            var result = response.getReturnValue();
+            var cols = [];
+            for(var i=0;i<fieldsName.length;i++){
+                cols.push({
+                    label: Object.keys(fieldsNameandLabel).find(key => fieldsNameandLabel[key] === fieldsName[i]),
+                    fieldName: fieldsName[i]
+                });
+            }
+            console.log(result);
+            component.set("v.allData", result);
+            component.set("v.filteredData", result);
+            component.set("v.columns", cols);
+            component.set("v.flag", false);
+            this.preparePagination(component, result);
+        }
+    });
+    $A.enqueueAction(action);
+    
+},
+preparePagination: function(component, result){
+    let countTotalPage = Math.ceil(result.length/component.get("v.pageSize"));
+    let totalPage = countTotalPage > 0 ? countTotalPage : 1;
+    component.set("v.totalPages", totalPage);
+    component.set("v.currentPageNumber", 1);
+    component.set("v.showRecordTo", component.get("v.pageSize"));
+    component.set("v.showRecordFrom", 1);
+    this.setPageDataAsPerPagination(component);
+},
+setPageDataAsPerPagination: function(component){
+    let data = [];
+    let pageNumber = component.get("v.currentPageNumber");
+    let pageSize = component.get("v.pageSize");
+    let filterData = component.get("v.filteredData");
+    let  x = (pageNumber - 1) * pageSize;
+    for(; x < (pageNumber)*pageSize;x++){
+        if(filterData[x]){
+            data.push(filterData[x]);
+        }
+        component.set("v.result", data);
+    }
+},
+searchRecordsBySearchPhrase : function (component) {
+    let searchPhrase = component.get("v.searchPhrase");
+    console.log(searchPhrase);
+    if (!$A.util.isEmpty(searchPhrase)) {
+        let allData = component.get("v.allData");
+        let filteredData = allData.filter(obj => Object.keys(obj).some(key => obj[key].includes(searchPhrase)));
+        component.set("v.filteredData", filteredData);
+        this.preparePagination(component, filteredData);
+    }
+},
+})

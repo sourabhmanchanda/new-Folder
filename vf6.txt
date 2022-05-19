@@ -1,0 +1,45 @@
+6. Create a dataList that has 200 records and shows 10 records per page.
+
+VF PAGE:
+
+<apex:page standardController = "Account" recordSetVar = "Accounts" extensions = "AccountStandardSetController">
+	<apex:sectionHeader title = "Account List"/>
+	<apex:form >
+		<apex:dataTable value = "{!Accounts}" var = "a">
+            <apex:facet name = "header">Account Name</apex:facet>
+            <apex:column value = "{!a.Name}"></apex:column>
+		</apex:dataTable>
+        <apex:panelGrid columns = "2">
+            <apex:commandLink action = "{!previous}">Previous</apex:commandlink>
+            <apex:commandLink action = "{!next}">Next</apex:commandlink>
+        </apex:panelGrid>
+	</apex:form>
+</apex:page>
+
+
+Extension :
+
+public class AccountStandardSetController {
+	public AccountStandardSetController(ApexPages.StandardSetController controller) {
+		controller.setPageSize(20);
+	}
+}
+
+
+Test Class (pending)
+
+@isTest
+private class AccountStandardSetControllerTest {
+    @isTest static void test(){
+       
+       Account acc = new Account(Name = 'Test Account');   
+       insert acc;   
+                
+       ApexPages.StandardController sc = new ApexPages.StandardController(acc); 
+       //AccountStandardSetController assc = new AccountStandardSetController(sc);
+
+       PageReference pref = Page.DisplayRecordsUsingPagination; 
+       pref.getParameters().put('Id', String.valueOf(acc.Id));
+       Test.setCurrentPage(pref);
+    }
+}

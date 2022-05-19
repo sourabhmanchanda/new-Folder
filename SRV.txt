@@ -1,0 +1,36 @@
+Class----> SRV_WorkflowServiceUtil
+
+Selector---->
+	SRV_WorkflowActionSelector
+	SRV_CaseCategorySelector
+	SRV_CaseCategorySelectorWithoutSharing
+Methods covered ---->
+	getSystemUserId()
+	trackActionPerformed()
+	submitForApproval()
+	submitForSecondApproval()
+	submitForSecondApproval()
+	enqueueForDecompression()
+	enqueueForFOProcessing()
+	setInProgress()
+	setVoided()
+	setCompleted()
+	setApproved()
+	setDenied()
+	refreshFromSnapShot()
+	setCustomFormReadOnlyByStatus()
+	identifyProspectiveAndSetDefaults()
+
+
+Pending ---->
+	updateDynamicWorkflowConfiguration() --> // method updateDynamicWorkflowConfiguration is tested here via update trigger call
+
+	stampDynamicWorkflowConfiguration()
+	setCustomFormReadonlyStatusNull()	private method
+	updateSystemCreatedCases()
+
+
+Failing methods--->
+	
+
+	

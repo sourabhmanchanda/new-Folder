@@ -1,0 +1,9 @@
+These are buttons on Opportunity 
+1) Batch Generate BSs and SOs
+2) Batch Generate SOs
+3) Generate BS and SO
+
+4) Generate Sales Order
+5) Generate Quote
+
+Out of this 3 are JavaScript buttons please create new buttons and perform same action as these 3 are doing. 

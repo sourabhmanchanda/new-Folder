@@ -1,0 +1,614 @@
+//Componenent
+
+<aura:component controller="ObjectWithFieldsAndRecordsCtrl" implements="force:appHostable,flexipage:availableForAllPageTypes,flexipage:availableForRecordHome,force:hasRecordId,forceCommunity:availableForAllPageTypes" 
+            access="global">
+    
+    <aura:attribute name="options" type="List" />
+    <aura:attribute name="selectedValue" type="String" />
+	<aura:attribute name="isModalOpen" type="boolean" default="false"/>
+    <aura:attribute name="allfields" type="List"/>
+    <aura:attribute name="selectedfield" type="String"/>
+    <aura:attribute name="selectedObjectValue" type="String" />
+    
+    <aura:attribute name="data" type="Object"/>
+    <aura:attribute name="columns" type="List"/>
+    <aura:attribute name="requiredOptions" type="List" default="[]"/>
+    <aura:attribute name="allLabelFieldName" type="List" />
+
+
+    <aura:handler name="init" value="{!this}" action="{!c.myAction}" />
+  <!-- Optional component attributes here -->
+  <!-- Optional HTML markup -->
+    
+  
+    
+  <div class="heading1"> 
+    <h1>All Objects List</h1>
+  </div>
+  <div class="heading2"> 
+    <h2>And List of Records</h2>
+  </div>
+   
+    <div class="slds-grid slds-gutters">
+        <div class="slds-col">
+            <span>
+                <lightning:select name="Objects" label="All Objects:" aura:id="onjId" value="{!v.selectedValue}" onchange="{!c.changeAction}">
+                    <aura:iteration items="{!v.options}" var="objectname">
+                        <option value="{!objectname}" text="{!objectname}" />  
+                    </aura:iteration>
+                </lightning:select>
+            </span>
+        </div>
+        <div class="slds-col">
+            <span>
+            	<lightning:input type="search" label="Search" placeholder = "Search Records"> </lightning:input>
+            </span>
+        </div>
+        <div class="slds-col">
+            <span>
+                <lightning:select aura:id="select" name="select" label="Record you want to show" onchange="{! c.onChange }">
+                    <option value="">choose one...</option>
+                    <option value="five">5</option>
+                    <option value="ten">10</option>
+                    <option value="fifteen">15</option>
+                    
+                </lightning:select>
+            </span>
+        </div>
+        <div class="slds-col">
+            <span>
+                <lightning:button variant="brand"
+                          label="Select Fields"
+                          title="Select Fields"
+                          onclick="{! c.openModel }" />
+        <!--Use aura:if tag to display/hide popup based on isModalOpen value-->  
+        <aura:if isTrue="{!v.isModalOpen}">
+             
+            <!-- Modal/Popup Box starts here-->
+            <section role="dialog" tabindex="-1" aria-labelledby="modal-heading-01" aria-modal="true" aria-describedby="modal-content-id-1" class="slds-modal slds-fade-in-open">
+                <div class="slds-modal__container">
+                    <!-- Modal/Popup Box Header Starts here-->
+                    <header class="slds-modal__header">
+                        <lightning:buttonIcon iconName="utility:close"
+                                              onclick="{! c.closeModel }"
+                                              alternativeText="close"
+                                              variant="bare-inverse"
+                                              class="slds-modal__close"/>
+                        <h2 id="modal-heading-01" class="slds-text-heading_medium slds-hyphenate">All Fields</h2>
+                    </header>
+                    <!--Modal/Popup Box Body Starts here-->
+                    <div class="slds-modal__content slds-p-around_medium" id="modal-content-id-1">
+                        <p><b>
+                           <lightning:dualListbox name="allFields"
+                                                   label= "Select Fields"
+                                                   sourceLabel="Available"
+                                                   selectedLabel="Selected"
+                                                   fieldLevelHelp="Select your preferred Fields"
+                                                   options="{!v.allfields}"
+                                                   value="{!v.selectedfield}"
+                                                   requiredOptions="{!v.requiredOptions}"
+                                                   onchange="{!c.dualLst }"/>
+                            </b>
+                        </p>
+                    </div>
+                    <!--Modal/Popup Box Footer Starts here-->
+                    <footer class="slds-modal__footer">
+                        <lightning:button variant="neutral"
+                                          label="Cancel"
+                                          title="Cancel"
+                                          onclick="{! c.closeModel }"/>
+                        <lightning:button variant="brand"
+                                          label="OK"
+                                          title="OK"
+                                          onclick="{!c.submitDetails}"/>
+                    </footer>
+                </div>
+            </section>
+            <div class="slds-backdrop slds-backdrop_open"></div>
+        </aura:if>
+            </span>
+        </div>
+    </div>
+    
+    
+    <div style="height: 300px">
+        <lightning:datatable
+                keyField="id"
+                data="{! v.data }"
+                columns="{! v.columns }"
+                hideCheckboxColumn="true"/>
+    </div>
+    
+    <div class="slds-docked-form-footer">
+        <div class="slds-button-group" role="group">
+            <div>
+                <button class="slds-button slds-button_neutral slds-button_first">First</button>
+            </div>
+            <div>
+                <button class="slds-button slds-button_neutral slds-button_middle">Previous</button>
+            </div>
+            <div>
+                <button class="slds-button slds-button_brand">Next</button>
+            </div>
+            <div>
+                <button class="slds-button slds-button_brand">Last</button>
+            </div>
+        </div>
+    </div>
+
+</aura:component>
+
+
+
+//Javascript
+
+({
+    myAction : function(component, event, helper) {
+        helper.showsObjects(component, event);
+    },
+    
+    changeAction : function(component, event, helper) {
+        helper.showfields(component, event);
+    },
+	
+    onChange: function (component, event, helper) {
+        alert(component.find('select').get('v.value') + ' pie is good.');
+    },
+    
+    handleClick : function (cmp, event, helper) {
+        alert("You clicked: " + event.getSource().get("v.label"));
+    },
+    
+    
+    openModel: function(component, event, helper) {
+      // Set isModalOpen attribute to true
+      component.set("v.isModalOpen", true);
+        var selectedValues = event.getParam("value");
+        //Update the Selected Values  
+        component.set("v.selectedfield", selectedValues);
+   },
+  
+   closeModel: function(component, event, helper) {
+      // Set isModalOpen attribute to false  
+      component.set("v.isModalOpen", false);
+   },
+  
+   submitDetails: function(component, event, helper) {
+      // Set isModalOpen attribute to false
+      //Add your code to call apex method or do some processing
+      helper.getRecordss(component, event);
+      component.set("v.isModalOpen", false);
+  
+   },
+    
+    dualLst: function (component, event, helper) {
+        //Get the Selected values   
+        var selectedValues = event.getParam("value");
+        component.set("v.selectedfield",selectedValues);
+        console.log("selected fields value",selectedValues);
+
+    },
+    
+    getSelectedField : function(component, event, helper){
+        //Get selected Genre List on button click 
+        // var selectedValues = component.get("v.selectedfield");
+        // console.log('Selectd listValue-' + selectedValues);
+    },
+    
+    onSelectChange : function(component, event, helper) {
+        var selected = component.find("records").get("v.value");
+        console.log(selected);
+        var paginationList = [];
+        var oppList = component.get("v.options");
+        console.log(oppList);
+        for(var i=0; i< selected; i++){
+            paginationList.push(oppList[i]);
+        }
+        component.set('v.paginationList', paginationList);
+        console.log(paginationList);
+    },
+    
+
+})
+
+
+
+//helper
+
+({
+	showsObjects : function(component, event, helper) {
+		var action = component.get("c.getObjectName");
+        var pageSize = component.get("v.pageSize");
+        action.setCallback(this, function(response) {
+            var state = response.getState();
+            if (state === "SUCCESS") {           
+                var allValues = response.getReturnValue();
+                component.set("v.options", allValues);
+                
+                component.set("v.totalSize", component.get("v.options").length);
+                component.set("v.start",0);
+                component.set("v.end",pageSize-1);
+                var paginationList = [];
+                for(var i=0; i< pageSize; i++){
+                    paginationList.push(response.getReturnValue()[i]);
+                }
+                component.set('v.paginationList', paginationList);
+                //console.log(paginationList);
+            }                    
+            else if (state === "ERROR") {
+                var errors = response.getError();
+                if (errors) {
+                    if (errors[0] && errors[0].message) {
+                        console.log("Error message: " + 
+                                    errors[0].message);
+                    }
+                } 
+                else {
+                    console.log("Unknown Error");
+                }
+            }
+        });
+        $A.enqueueAction(action);
+	},
+    
+     showfields : function(component, event, helper){
+         var action = component.get("c.getObjectField");
+         var sO = component.get("v.selectedValue");
+         let sOApiName = sO + " ID";
+         action.setParams({"objectName":sO});
+         action.setCallback(this, function(response) {
+             var state = response.getState();
+             if (state === "SUCCESS") {
+                 console.log('response.getReturnValue====' + JSON.stringify(response.getReturnValue()));
+                 const fieldObj = [];	
+                     for (const element of response.getReturnValue()) {
+                         fieldObj.push({
+                             label: element,
+                             value: element
+                         })
+                         if(element === sOApiName)
+                         {
+                             component.set("v.requiredOptions",element);
+                         }
+                     }
+
+                 component.set("v.allfields", fieldObj);
+                 
+            }
+        });
+        $A.enqueueAction(action);
+
+        var pickselected = component.find("onjId").get("v.value");
+        console.log('pickselected--->' + pickselected);
+		// component.set('v.selectedValue', pickselected);
+        var selected = component.get('v.selectedValue');
+        console.log('Selected--->' + selected);
+        var action1 = component.get("c.objectRecords");
+        action1.setParams({selectedObject : selected});
+        action1.setCallback(this, function(response) {
+            var state = response.getState();
+            if (state === "SUCCESS") {  
+                //component.find('sfdcDiv').set("v.body",[]);
+                var allValues = response.getReturnValue();
+            	console.log('allValues--->' + JSON.stringify(allValues));
+
+                var objectValue = allValues.sObjectData;
+                const columns=[];
+                component.set('v.data',objectValue);
+                component.set("v.allLabelFieldName",allValues.fieldList);
+                console.log('objectValue--->' + JSON.stringify(objectValue));
+                for(var k of allValues.fieldList){
+                    columns.push({
+                        label: k.label,
+                        fieldName: k.apiName,
+                    });
+                }
+                console.log('abc',JSON.stringify(columns));
+                component.set('v.columns',columns);
+            }
+            else if (state === "ERROR") {
+                var errors = response.getError();
+                if (errors) {
+                    if (errors[0] && errors[0].message) {
+                        console.log("Error message: " + 
+                                 errors[0].message);
+                    }
+                } 
+                else {
+                    console.log("Unknown Error");
+                }
+            }
+        });
+        $A.enqueueAction(action1);
+    },
+
+    getRecordss:function (component,event){
+        var selectedfld = component.get("v.selectedfield");
+        let allFieldValues = component.get("v.allLabelFieldName");
+        const columns = [];
+        for(var k of allFieldValues){
+            if(selectedfld.includes(k.label)){
+                columns.push({
+                    label: k.label,
+                    fieldName: k.apiName,
+                });
+            }
+        }
+        component.set("v.columns",columns);
+    },
+
+})
+
+
+
+//apex class
+
+public class ObjectWithFieldsAndRecordsCtrl {
+    @AuraEnabled
+    public static List<String> getObjectName(){
+        List<String> objects=new List<String>();
+        List<Schema.SObjectType> gd = Schema.getGlobalDescribe().Values();  
+        for(SObjectType sot:gd){
+            objects.add(sot.getDescribe().getName());
+        }
+        objects.sort();  
+        return objects;
+    }
+    
+    @AuraEnabled
+    public static List<String> getObjectField(string objectName){
+        Map <String, Schema.SObjectType> schemaMap = Schema.getGlobalDescribe();
+        List<string> fieldsNames = new list<string>();
+        
+        Map <String, Schema.SObjectField> fieldMap = 
+            schemaMap.get(objectName).getDescribe().fields.getMap();
+        for(Schema.SObjectField sfield : fieldMap.values())
+        {
+            schema.describefieldresult dfield = sfield.getDescribe();
+            fieldsNames.add(dfield.getLabel());
+            
+        }
+        fieldsNames.sort();
+        return fieldsNames;
+    }
+ 	
+	
+    @AuraEnabled
+    public static DynamicBindingWrapper objectRecords(String selectedObject){
+        DynamicBindingWrapper dynamicData = new DynamicBindingWrapper();
+        List<fieldDataWrapper> wrapperList =  new List<fieldDataWrapper>();
+        List<String> fields = new List<String>();
+        Map<String , Schema.SObjectType> globalDescription = Schema.getGlobalDescribe();
+        Schema.sObjectType objType = globalDescription.get(selectedObject); 
+        Schema.DescribeSObjectResult r1 = objType.getDescribe(); 
+        
+        Map<String , Schema.SObjectField> mapFieldList = r1.fields.getMap();  
+
+        for(Schema.SObjectField field : mapFieldList.values())  {  
+            Schema.DescribeFieldResult fieldResult = field.getDescribe();  
+            
+            if(fieldResult.isAccessible())  {  
+                fields.add(fieldResult.getName());
+            }
+            fieldDataWrapper wrapper = new fieldDataWrapper();
+            wrapper.label = field.getDescribe().getLabel();
+            wrapper.apiName = field.getDescribe().getName();
+            wrapperList.add(wrapper);
+        }
+        Integer i = 0;
+        String fieldsToFetch = '';
+        for(String temp:fields){       
+            Integer len = fields.size();
+            if(i==len-1){
+                  fieldsToFetch = fieldsToFetch + temp;
+            }
+            else{
+                  fieldsToFetch = fieldsToFetch + temp + ',';
+            }
+            i++;
+        }
+        String sql = ' SELECT ' + fieldsToFetch + ' FROM ' + selectedObject + ' ORDER BY CreatedDate DESC LIMIT 20';
+        List<Sobject> objRecords = new List<Sobject>();
+        objRecords = Database.Query(sql);
+        System.debug('objRecords--->' + objRecords);
+        if(objRecords!=null && objRecords.size()>0){
+        	dynamicData.sObjectData = objRecords;
+        }
+        else{
+            dynamicData.sObjectData = new List<sObject>();
+        }
+        dynamicData.fieldList = wrapperList;
+        System.debug('dynamicData.sObjectData--->' + dynamicData.sObjectData);
+        System.debug('dynamicData.fieldList--->' + dynamicData.fieldList);
+        System.debug('dynamicData--->' + dynamicData);
+        return dynamicData;
+        } 
+    
+    //Class to store the dynamic data and list of related fields
+    public class DynamicBindingWrapper{
+        @AuraEnabled
+        public List<sObject> sObjectData {get; set;}
+        @AuraEnabled
+        public List<fieldDataWrapper> fieldList {get; set;}
+    }
+    
+    //Class to store the field information
+    public class fieldDataWrapper{
+        @AuraEnabled
+        public String label {get; set;}
+        @AuraEnabled
+        public String apiName {get; set;}
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+({
+    //Show objects function
+    showsObjects : function(component, event, helper) {
+        var action = component.get("c.getAllObject");
+        action.setCallback(this, function(response) {
+            var state = response.getState();
+            if (state === "SUCCESS") {
+                var result = response.getReturnValue();
+                var listofObjects = [];
+                for(var key in result){
+                    listofObjects.push({key: key, value: result[key]});
+                }
+                component.set("v.objlist", listofObjects);
+                console.log(listofObjects);
+            }
+        });
+        $A.enqueueAction(action);
+    },
+
+    //Data Table Functions
+    getrecords : function(component, event, allfieldslist) {
+        var action = component.get("c.getrecords");
+        var obj = component.get('v.selectedObject');
+        var fieldstofetch = [];
+        console.log(allfieldslist);
+        for(var key in allfieldslist){
+            fieldstofetch.push(key);
+        }
+        var strfieldstofetch = fieldstofetch.toString();
+        console.log(strfieldstofetch);
+        action.setParams({"obj":obj, "fieldsToFetch":strfieldstofetch});
+        action.setCallback(this, function(response) {
+            var state = response.getState();
+            if (state === "SUCCESS") {
+                var result = response.getReturnValue();
+                component.set('v.recordList',result);
+                console.log(result);
+            }
+            else{
+                alert('!getreocrds function not returning value');
+            }
+        });
+        $A.enqueueAction(action);
+    },
+
+    //Object fields picklist
+    showfields : function(component, event, helper){
+        var action = component.get("c.getAllfields");
+        var sO = component.get("v.selectedObject");
+        console.log(sO);
+        action.setParams({"objectName":sO});
+        action.setCallback(this, function(response) {
+        var state = response.getState();
+        if (state === "SUCCESS") {
+            var result = response.getReturnValue();
+            var allfieldslist = [];
+            for(var fname in result){
+                allfieldslist.push({label: result[fname], value: fname});
+            }
+            component.set('v.columns',[{label: 'Id', fieldName: 'Id', type: 'text'}]);
+            component.set("v.fieldlist", allfieldslist);
+            component.set("v.fieldlistmap", result);
+            console.log(result);
+            this.getrecords(component, event, result);
+        }
+        });
+        $A.enqueueAction(action);
+    },
+
+    //SearchBar SOSL
+
+
+    
+    
+})
+
+
+
+
+({
+    //Handler Function for Object Picklist
+    init: function (component, event, helper) {
+        //Object picklist
+        helper.showsObjects(component, event, helper);
+    },
+    //Search bar function
+    handleKeyUp: function (component, event, helper) {
+        var isEnterKey = event.keyCode === 13;
+        if (isEnterKey) {
+            var selectedObject = component.get('v.selectedObject');
+            if(selectedObject === ''){
+                alert('Select a Object first to Search!');
+                return;
+            }
+            var queryTerm = component.find('enter-search').get('v.value');
+            alert('searched '+queryTerm +'in '+selectedObject);
+        }
+    },
+    
+
+    //handle change on multipicklist popup
+    handleChange : function(component, event, helper) {
+        var selectedValues = event.getParam("value");
+        console.log(selectedValues);
+        var fields = component.get('v.fieldlistmap');
+        console.log(fields);
+        var arrayLength = selectedValues.length;
+        var columns = [];
+        var fields0 = fields[0];
+        for(var fname in fields0){
+            console.log(fname);
+            for (var i = 0; i < arrayLength; i++) {
+                if(fname === selectedValues[i]){
+                    columns.push({label: fields0[fname], fieldName: fname, type: 'text'});
+                }
+            }
+        }
+        console.log(columns);
+        component.set('v.columns',columns);
+    },
+
+});
+
+
+
+ @AuraEnabled
+    public static List<sObject> getrecords(String obj, String fieldsToFetch){
+        try {
+            String sql = ' SELECT ' + fieldsToFetch + ' FROM ' + obj + ' ORDER BY CreatedDate DESC LIMIT 50';
+            List<Sobject> recordList = new List<Sobject>();
+            recordList = Database.Query(sql);
+            return recordList;
+        } catch (Exception e) {
+            throw new AuraHandledException(e.getMessage());
+        }
+    }
+

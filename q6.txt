@@ -1,0 +1,109 @@
+<template>
+    <div class="slds-col slds-var-p-top_small">                
+        <div class="slds-form-element">
+            <div class="slds-form-element__control slds-input-has-icon slds-input-has-icon_left">
+                <lightning-icon class="input-icon" icon-name="utility:user" alternative-text="username" size="xx-small"></lightning-icon>
+                <input type="text" data-id="inputUsername" placeholder="Username" class="slds-input input-element" onchange={handleUserNameChange} required />
+            </div>
+        </div>
+    </div>
+
+    <div class="slds-col slds-var-p-top_small">               
+        <div class="slds-form-element">
+            <div class="slds-form-element__control slds-input-has-icon slds-input-has-icon_left">
+                <lightning-icon class="input-icon" icon-name="utility:lock" alternative-text="username" size="xx-small"></lightning-icon>
+                <input type="password" data-id="inputPassword" placeholder="Password" class="slds-input input-element" onchange={handlePasswordChange} required/>
+            </div>
+        </div>
+    </div>
+
+    <div class="slds-col slds-var-p-top_small">
+        <button type="submit" class="login-button slds-button" onclick={handleLogin}>Log In</button>
+    </div>
+
+</template>
+
+
+
+
+
+
+
+
+import { LightningElement, track } from 'lwc';
+import getcontact from '@salesforce/apex/LC6Class.getcontact';
+
+
+export default class LC6Class extends LightningElement {
+
+
+    username;
+    password;
+  
+
+    connectedCallback()
+    {
+
+        var meta = document.createElement("meta");
+        meta.setAttribute("name", "viewport");
+        meta.setAttribute("content", "width=device-width, initial-scale=1.0");
+        document.getElementsByTagName('head')[0].appendChild(meta);
+    }
+
+    handleUserNameChange(event){
+
+        this.username = event.target.value;
+    }
+
+    handlePasswordChange(event){
+        this.password = event.target.value;
+    }
+
+    handleLogin(event){
+
+       if(this.username && this.password){
+            getcontact({ username: this.username, password: this.password })
+                .then((result) => {
+                    alert('Login Successfully');
+                    //window.location.href = result;
+                })
+                .catch((error) => {
+                    this.error = error;      
+                    this.errorCheck = true;
+                    this.errorMessage = error.body.message;
+                });
+
+            }
+        
+
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+public class LWC_Q6  {
+    @auraEnabled
+    public static String getcontact(String username,Decimal userpassw ){
+        List<Contact> lcont=new List<Contact>([select Username__c,Password__c from Contact where Username__c=:username  Limit 1]);
+        if(lcont.size()==0){
+            return 'User dose not exit!';
+        }
+        else{
+            if(lcont[0].Password__c==userpassw ){
+                return 'Login successfully';
+            }
+            else{
+                return 'Invalid Password';
+            }  
+        }
+    }
+}

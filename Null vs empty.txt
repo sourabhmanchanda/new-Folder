@@ -1,0 +1,14 @@
+List<Account> accountList1 ;
+system.debug(accountList1);
+List<Account> accountList2 = new List<Account>();
+system.debug(accountList2);
+accountList2 = NULL;
+SYSTEM.debug(accountList2);
+
+
+List<Asset> assetList1;
+assetList1 = [SELECT ID, Name FROM Asset LIMIT 10];
+system.debug(assetList1);
+List<Asset> assetList2 = new List<Asset>();
+assetList2 = [SELECT ID, Name FROM Asset LIMIT 10];
+system.debug(assetList2);

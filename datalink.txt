@@ -1,0 +1,177 @@
+trigger DataLink on DATA_LINK__c (before insert, after insert, After update, after delete) {
+    if(trigger.isBefore && trigger.isInsert){
+        DataLinkHelper.atleastOneAccountWithProductionDataLink(trigger.new);
+    }
+    if(trigger.isAfter && trigger.isInsert){
+        DataLinkHelper.DataLinkHelper(trigger.new);
+    }
+    if(trigger.isAfter && trigger.isUpdate){
+        DataLinkHelper.updateAccountRecords(trigger.new);
+    }
+    if(trigger.isAfter && trigger.isDelete){
+        DataLinkHelper.updateAccountRecordsOnDLDeletion(trigger.old);
+    }
+}
+
+
+
+public class DataLinkHelper {
+    public static void atleastOneAccountWithProductionDataLink(List<Data_Link__c> dataLinkList){
+        Decimal prodAcc;
+        Set<Id> accIdSet = new Set<Id>();
+        for( Data_Link__c dl : dataLinkList ) {
+            if(dl.Account__c != null){
+            	accIdSet.add(dl.Account__c);
+            }
+        }
+        system.debug('accIdSet ' + accIdSet);
+        List<Account> accList = [SELECT ID from Account Where Id IN : accIdSet];
+        for(Account acc : accList){
+            /*
+            if(acc.Data_Link__c.Production_Installed__r != null && acc.Data_Link__c.Production_Uninstalled__r == null){
+                prodAcc = 1;
+            } */
+        }
+    }    
+    public static void DataLinkHelper(List<Data_Link__c> dataLinkList){
+        Decimal NoOfInstalls = 0;
+        Set<Id> prodAccIdSet = new Set<Id>();        
+        Set<Id> sandAccIdSet = new Set<Id>();        
+        Set<Id> formAccIdSet = new Set<Id>();
+        Set<Id> blankAccIdSet = new Set<Id>();
+        for( Data_Link__c dl : dataLinkList){
+            if(dl.Production_Installed__c != null && dl.Production_Uninstalled__c == null && dl.Account__c != null){
+                prodAccIdSet.add(dl.Account__c);
+                NoOfInstalls += 1;
+            }
+            else if(dl.Production_Installed__c == null && dl.Production_Uninstalled__c == null && dl.Account__c != null){
+                sandAccIdSet.add(dl.Account__c);
+            }
+            else if(dl.Production_Uninstalled__c != null || dl.Sandbox_Uninstalled__c != null){
+                formAccIdSet.add(dl.Account__c);
+            }
+            else{
+                blankAccIdSet.add(dl.Account__c);
+            }
+        }
+        
+        List<Account> prodAccList = [SELECT id, DL_Client__c,DL_No_of_Installs__c FROM Account WHERE ID IN : prodAccIdSet];
+        for(Account acc : prodAccList){
+            acc.DL_Client__c = 'Production';
+            acc.DL_No_of_Installs__c = acc.DL_No_of_Installs__c + NoOfInstalls;
+        }
+        if(!prodAccList.isEmpty()){
+        	update prodAccList;
+        }
+        
+        List<Account> sandAccList = [SELECT id, DL_Client__c FROM Account WHERE ID IN : sandAccIdSet];
+        for(Account acc : sandAccList){
+            acc.DL_Client__c = 'Sandbox';
+        }
+        if(!sandAccList.isEmpty()){
+        	update sandAccList;
+        }
+        
+        List<Account> formAccList = [SELECT id, DL_Client__c FROM Account WHERE ID IN : formAccIdSet];
+        for(Account acc : formAccList){
+            acc.DL_Client__c = 'Former';
+        }
+        if(!formAccList.isEmpty()){
+        	update formAccList;
+        }
+        
+        List<Account> blankAccList = [SELECT id, DL_Client__c FROM Account WHERE ID IN : blankAccIdSet];
+        for(Account acc : blankAccList){
+            acc.DL_Client__c = 'blank';
+        }
+        if(!blankAccList.isEmpty()){
+        	update blankAccList;
+        }
+    }
+    
+    public static void updateAccountRecords(List<Data_Link__c> dataLinkList){
+    	Decimal ProdNoOfInstalls = 0;
+    	Decimal SandNoOfInstalls = 0;
+    	Decimal FormNoOfInstalls = 0;
+    	Decimal BlankNoOfInstalls = 0;
+        Set<Id> prodAccIdSet = new Set<Id>(); 
+        Set<Id> sandAccIdSet = new Set<Id>();        
+        Set<Id> formAccIdSet = new Set<Id>();
+        Set<Id> blankAccIdSet = new Set<Id>();
+        for( Data_Link__c dl : dataLinkList){
+            if(dl.Production_Installed__c != null && dl.Production_Uninstalled__c == null && dl.Account__c != null){
+                prodAccIdSet.add(dl.Account__c);
+                ProdNoOfInstalls += 1;
+            }
+            else if(dl.Production_Installed__c == null && dl.Production_Uninstalled__c == null && dl.Account__c != null){
+                sandAccIdSet.add(dl.Account__c);
+                SandNoOfInstalls -= 1;
+            }
+            else if(dl.Production_Uninstalled__c != null || dl.Sandbox_Uninstalled__c != null){
+                formAccIdSet.add(dl.Account__c);
+                FormNoOfInstalls -= 1;
+            }
+            else{
+                blankAccIdSet.add(dl.Account__c);
+                BlankNoOfInstalls -= 1;
+            }
+        }
+        
+        List<Account> prodAccList = [SELECT id, DL_Client__c,DL_No_of_Installs__c FROM Account WHERE ID IN : prodAccIdSet];
+        for(Account acc : prodAccList){
+            acc.DL_Client__c = 'Production';
+            acc.DL_No_of_Installs__c = acc.DL_No_of_Installs__c + ProdNoOfInstalls;
+        }
+        if(!prodAccList.isEmpty()){
+            update prodAccList;
+        }
+        
+        List<Account> sandAccList = [SELECT id, DL_Client__c, DL_No_of_Installs__c FROM Account WHERE ID IN : sandAccIdSet];
+        for(Account acc : sandAccList){
+            acc.DL_Client__c = 'Sandbox';
+            acc.DL_No_of_Installs__c = acc.DL_No_of_Installs__c + SandNoOfInstalls;  
+        }
+        if(!sandAccList.isEmpty()){
+        	update sandAccList;
+        }
+        
+        List<Account> formAccList = [SELECT id, DL_Client__c, DL_No_of_Installs__c FROM Account WHERE ID IN : formAccIdSet];
+        for(Account acc : formAccList){
+            acc.DL_Client__c = 'Former';
+            acc.DL_No_of_Installs__c = acc.DL_No_of_Installs__c + FormNoOfInstalls;
+        }
+        if(!formAccList.isEmpty()){
+        	update formAccList;
+        }
+        
+        List<Account> blankAccList = [SELECT id, DL_Client__c, DL_No_of_Installs__c FROM Account WHERE ID IN : blankAccIdSet];
+        for(Account acc : blankAccList){
+            acc.DL_Client__c = 'blank';
+            acc.DL_No_of_Installs__c = acc.DL_No_of_Installs__c + BlankNoOfInstalls;
+        }
+        if(!blankAccList.isEmpty()){
+        	update blankAccList;
+        }
+    }
+    
+    public static void updateAccountRecordsOnDLDeletion(List<Data_Link__c> dataLinkList){
+        Decimal NoOfInstalls = 0;
+        Set<Id> prodAccIdSet = new Set<Id>();        
+        for( Data_Link__c dl : dataLinkList){
+            if(dl.Production_Installed__c != null && dl.Production_Uninstalled__c == null && dl.Account__c != null){
+                prodAccIdSet.add(dl.Account__c);
+                NoOfInstalls -= 1;
+            }
+        }
+        
+        List<Account> prodAccList = [SELECT id, DL_Client__c,DL_No_of_Installs__c FROM Account WHERE ID IN : prodAccIdSet];
+        for(Account acc : prodAccList){
+            acc.DL_Client__c = 'Production';
+            acc.DL_No_of_Installs__c = acc.DL_No_of_Installs__c + NoOfInstalls;
+        }
+        if(!prodAccList.isEmpty()){
+            update prodAccList;
+        }
+    }
+
+}

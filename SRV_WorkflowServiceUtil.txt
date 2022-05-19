@@ -1,0 +1,636 @@
+/** ----------------------------------------------------------------
+* @description SRV_WorkflowServiceUtil contains functionality for common Workflow Actions
+*
+* @version 1.0
+* @since   2019-06-11
+*---------------------------------------------------------------*/
+public class SRV_WorkflowServiceUtil {
+    
+    // serves to avoid retrieving System User multiple times
+    private static Id systemUserId = null;
+    
+    /**
+     * Method provides System User Id. It queries System User only once and remembers it
+     * for future calls.
+     * 
+     * @since    2019-06-11
+    **/
+    public static Id getSystemUserId() {
+        
+        // if systemUserId is not populated yet, initialize it
+        if (systemUserId == null) {
+            List<User> users = new SRV_UserSelectorWOSharing().selectByExternalId(SRV_Constants.SYSTEM_USER_EXTERNALID);
+            if (users == null || users.size() != 1) {
+                throw new QueryException('System User could not be uniquely identified! User(s) found:' + users);
+            }
+            systemUserId = users.get(0).Id;
+        }
+        
+        return systemUserId;
+    }
+    
+    /**
+     * Method stamps information about the Action Performed
+     * 
+     * @since    2019-06-11
+     * @param  List<SWorkflowContext> contexts that the method operates on
+    **/
+    public static void trackActionPerformed(List<SRV_Workflow.WorkflowContext> contexts) {
+        if (contexts == null) {
+            return;
+        }
+        
+        for (SRV_Workflow.WorkflowContext context : contexts) {
+            // check if action was taken (is populated and was changed)
+            if (String.isBlank(context.newRecord.Action__c)
+               || context.newRecord.Action__c == context.originalRecord.Action__c) {
+                continue;
+            }
+			
+            context.newRecord.ActionPerformed__c = context.newRecord.Action__c;
+            
+            // if Reply or Forward Action was taken
+            // original owner is stamped as previous user
+            if (context.newRecord.Action__c == SRV_CaseService.REPLY_ACTION
+               || context.newRecord.Action__c == SRV_CaseService.FORWARD_ACTION) {
+            	context.newRecord.PreviousUser__c = context.originalRecord.OwnerId;
+                   continue;
+            }
+            
+            // if owner was changed, but not because of Forward/Reply
+            // the User that took action is stamped as previous user
+            context.newRecord.PreviousUser__c = UserInfo.getUserId();
+        }
+    }
+    
+    /**
+     * Method submits the Case record for the First Approval. It decides new Case Status, based on
+     * Workflow. If the Case belongs to Workflow with multiple Approval levels, the Case Status
+     * will be set to PendingFirstApproval. Otherwise, PendingApproval Status will be set.
+     * 
+     * @since    2019-06-11
+     * @param  WorkflowContext context that the method operates on
+     * @param  boolean isMultiApproval indicates whether Case belongs to Workflow with multiple Approval levels
+    **/
+    public static void submitForApproval(SRV_Workflow.WorkflowContext context, boolean isMultiApproval) {
+        context.newRecord.ReadOnlyStatus__c = 'read';
+        context.newRecord.Status = SRV_CaseService.PENDING_APPROVAL_STATUS;
+        context.newRecord.OwnerId = context.newRecord.FirstLevelApproverId__c;
+        if (isMultiApproval) {
+            context.newRecord.Status = SRV_CaseService.PENDING_FIRST_APPROVAL_STATUS;
+        }
+    }
+    
+    /**
+     * Method submits the Case record for the Second Approval
+     * 
+     * @since    2019-06-11
+     * @param  WorkflowContext context that the method operates on
+    **/
+    public static void submitForSecondApproval(SRV_Workflow.WorkflowContext context) {
+        context.newRecord.ReadOnlyStatus__c = 'read';
+        context.newRecord.Status = SRV_CaseService.PENDING_SECOND_APPROVAL_STATUS;
+        context.newRecord.OwnerId = context.newRecord.SecondLevelApproverId__c;
+    }
+    
+    /**
+     * Method submits the Case record for the Third Approval
+     * 
+     * @since    2019-06-11
+     * @param  WorkflowContext context that the method operates on
+    **/
+    public static void submitForThirdApproval(SRV_Workflow.WorkflowContext context) {
+        context.newRecord.ReadOnlyStatus__c = 'read';
+        context.newRecord.Status = SRV_CaseService.PENDING_THIRD_APPROVAL_STATUS;
+        context.newRecord.OwnerId = context.newRecord.ThirdLevelApproverId__c;
+    }
+    
+    /**
+     * Method enqueues Case record for Decompression
+     * 
+     * @since    2019-06-29
+     * @param  WorkflowContext context that the method operates on
+     * @param  boolean indicates, whether decompression is needed upon Case Creation
+    **/
+    public static void enqueueForDecompression(SRV_Workflow.WorkflowContext context, boolean isCreation) {
+        // it might be required to restore the Case to the previous state after Decompression
+        // therefore crucial values has to be store aside
+        // otherwise Status, Owner, etc. would be lost because Case has to be assigned to System
+        // and set to SystemProcessing status while decompressing
+        context.snapShot = new Case(Id = context.newRecord.Id,
+                                   TicketId__c = context.newRecord.TicketId__c,
+                                   Status = context.newRecord.Status,
+                                   Action__c = context.newRecord.Action__c,
+                                   OwnerId = context.newRecord.OwnerId,
+                                   Workflow__c = context.newRecord.Workflow__c,
+                                   FrontOfficeResult__c = context.newRecord.FrontOfficeResult__c);
+		
+        context.newRecord.OwnerId = getSystemUserId();
+        context.newRecord.Status = SRV_CaseService.SYSTEM_PROCESSING_STATUS;
+        context.newRecord.ReadOnlyStatus__c = 'read';
+        
+        // reset fields that drove this workflow processing, so they
+        // are ready for new processing
+        cleanWorkflowTriggerFields(context);
+        if (isCreation) {
+        	context.enqueueCallout(SRV_Workflow.CalloutType.DECOMPRESS_ON_CREATION);
+        } else {
+        	context.enqueueCallout(SRV_Workflow.CalloutType.DECOMPRESS_ON_UPDATE);
+        }
+    }
+	
+    /**
+     * Method enqueues Case record for the FO data forwarding
+     * 
+     * @since    2019-06-11
+     * @param  WorkflowContext context that the method operates on
+    **/
+    public static void enqueueForFOProcessing(SRV_Workflow.WorkflowContext context) {
+        context.newRecord.OwnerId = getSystemUserId();
+		
+        context.enqueueCallout(SRV_Workflow.CalloutType.FRONT_OFFICE_DATA_FORWARD);
+        context.newRecord.ReadOnlyStatus__c = 'read';
+    }
+    
+    /**
+     * Method enqueues Case record for the FO data forwarding
+     * 
+     * @since    2019-06-11
+     * @param  WorkflowContext context that the method operates on
+     * @param  String processingStatus Status of the Case
+    **/
+    public static void enqueueForFOProcessing(SRV_Workflow.WorkflowContext context, String processingStatus) {
+        context.newRecord.Status = processingStatus;        
+        enqueueForFOProcessing(context);
+    }
+    
+    /**
+     * Method applies Apply Changes and Close functionality on the Case record
+     * 
+     * @since    2019-06-11
+     * @param  WorkflowContext context that the method operates on
+    **/
+    public static void applyChangesAndClose(SRV_Workflow.WorkflowContext context) {
+        
+        context.newRecord.ReadOnlyStatus__c = 'read';        
+        context.newRecord.OwnerId = getSystemUserId();
+                
+        if (context.newRecord.Status == SRV_CaseService.APPROVED_BUT_ERROR_STATUS
+            || context.newRecord.Status == SRV_CaseService.APPROVED_SYSTEM_ERROR_STATUS) {
+                context.newRecord.Status = SRV_CaseService.APPROVED_AND_PROCESSING_STATUS;
+                return;
+            }
+        
+        if (context.newRecord.Status == SRV_CaseService.DENIED_SYSTEM_ERROR_STATUS) {
+            context.newRecord.Status = SRV_CaseService.DENIED_AND_PROCESSING_STATUS;
+            return;
+        }
+        
+        context.newRecord.Status = SRV_CaseService.SYSTEM_PROCESSING_STATUS;
+    }
+    
+    /**
+     * Method recognizes Cases with Primary Case Category updated and calls stamping of Dynamic Workflow configuration
+     * upon them.
+     * 
+     * @since    2019-08-20
+    **/
+    public static void updateDynamicWorkflowConfiguration(Map<Id, Case> originalRecords, List<Case> updatedRecords) {
+        if (originalRecords == null || updatedRecords == null) {
+            return;
+        }
+        
+        List<Case> changedCategoryCases = new List<Case>(); 
+        for (Case cse : updatedRecords) {
+            if (cse.PrimaryCaseCategory__c == null) {
+                continue;
+            }
+            if (!originalRecords.containsKey(cse.Id)) {
+                continue;
+            }
+            Case originalRecord = originalRecords.get(cse.Id);
+            
+            if (originalRecord.PrimaryCaseCategory__c != cse.PrimaryCaseCategory__c) {
+                cse.Status = SRV_CaseService.IN_PROGRESS_STATUS;
+                changedCategoryCases.add(cse);
+            }
+        }
+        
+        stampDynamicWorkflowConfiguration(changedCategoryCases);
+    }
+    
+    /**
+     * Method stamps Workflow Configuration from Case Category to Case. It skips Cases
+     * that has got no Case Category, or the Case Category is assined to non-Dynamic
+     * Workflow
+     * 
+     * @since    2019-06-11
+     * @param  List<Case> List of Cases that the method works with
+    **/
+    public static void stampDynamicWorkflowConfiguration(List<Case> newCases) {
+		
+        if (newCases == null || newCases.size() == 0) {
+            return;
+        }
+        
+        Set<Id> caseCategoriesIds = new Set<Id>();
+        
+        for (Case newCase : newCases) {
+            if (newCase.PrimaryCaseCategory__c == null) {
+                continue;
+            }
+            caseCategoriesIds.add(newCase.PrimaryCaseCategory__c);
+        }
+        
+        if (caseCategoriesIds.size() == 0) {
+            return;
+        }
+        
+        // retrieve Case Categories with Workflow Configuration
+        List<CaseCategory__c> categories =
+            new SRV_CaseCategorySelectorWithoutSharing().selectByIdForWorkflowStamping(caseCategoriesIds);
+        
+        Map<Id, CaseCategory__c> caseCategoriesMap = new Map<Id, CaseCategory__c>();
+        
+        // prepare Case Categories into Map for easier processing
+        for (CaseCategory__c cc : categories) {
+            caseCategoriesMap.put(cc.Id, cc);
+        }
+        
+        // stamp Workflow configuration from Case Category onto Case record
+        for (Case newCase : newCases) {
+			
+            if (newCase.PrimaryCaseCategory__c == null) {
+                continue;
+            }
+            
+            if (!caseCategoriesMap.containsKey(newCase.PrimaryCaseCategory__c)) {
+                throw new QueryException('Case Category not found:' + newCase.PrimaryCaseCategory__c);
+            }
+            
+            CaseCategory__c cc = caseCategoriesMap.get(newCase.PrimaryCaseCategory__c);
+            
+            // currently this feature takes care only of Dynamic Workflows
+            if (String.isBlank(cc.Workflow__c) || !cc.Workflow__c.startsWith('Dynamic')) {
+                continue;
+            }
+			            
+            // stamp values
+            newCase.Workflow__c = cc.Workflow__c;
+            newCase.FirstLevelApprover__c = cc.FirstLevelApprover__c;
+            newCase.FirstLevelApproverId__c = cc.FirstLevelApproverId__c;
+            newCase.SecondLevelApprover__c = cc.SecondLevelApprover__c;
+            newCase.SecondLevelApproverId__c = cc.SecondLevelApproverId__c;
+            newCase.ThirdLevelApprover__c = cc.ThirdLevelApprover__c;
+            newCase.ThirdLevelApproverId__c = cc.ThirdLevelApproverId__c;
+			            
+            newCase.PendingActionsAssignment__c = cc.PendingActionsAssignment__c;
+            // if Case Creator should be stamped, check if it is populated
+            // it is populated if this is happening during the Case update
+            // or if the Case Creator was defined in the Case Creation request
+            if (cc.PendingActionsAssignmentId__c == 'Case Creator') {
+                if (newCase.CreatedById != null) {
+                	newCase.PendingActionsAssignmentId__c = newCase.CreatedById;
+                } else {
+                    newCase.PendingActionsAssignmentId__c = UserInfo.getUserId();
+                }
+            } else {
+            	newCase.PendingActionsAssignmentId__c = cc.PendingActionsAssignmentId__c;
+            }
+            
+            newCase.ErrorAssignment__c = cc.ErrorAssignment__c;
+            // if Case Creator should be stamped, check if it is populated
+            // it is populated if this is happening during the Case update
+            // or if the Case Creator was defined in the Case Creation request
+            if (cc.ErrorAssignmentId__c == 'Case Creator') {
+                if (newCase.CreatedById != null) {
+                    newCase.ErrorAssignmentId__c = newCase.CreatedById;
+                } else {
+                    newCase.ErrorAssignmentId__c = UserInfo.getUserId();
+                }
+            } else {
+            	newCase.ErrorAssignmentId__c = cc.ErrorAssignmentId__c;
+            }
+            
+            newCase.AlternativeAssigneeDefaultId_t__c = cc.AlternativeAssigneeDefaultId_t__c;
+            newCase.AlternativeAssignee1Id_t__c = cc.AlternativeAssignee1Id_t__c;
+            newCase.AlternativeAssignee2Id_t__c = cc.AlternativeAssignee2Id_t__c;
+            newCase.AlternativeAssignee3Id_t__c = cc.AlternativeAssignee3Id_t__c;
+            newCase.AlternativeAssignee4Id_t__c = cc.AlternativeAssignee4Id_t__c;
+            newCase.AlternativeAssignee5Id_t__c = cc.AlternativeAssignee5Id_t__c;
+        }
+    }
+    
+    /**
+     * Method sets Case record as InProgress
+     * 
+     * @since    2019-08-20
+     * @param  WorkflowContext context that the method operates on
+    **/
+    public static void setInProgress(SRV_Workflow.WorkflowContext context) {        
+        context.newRecord.ReadOnlyStatus__c = 'write';
+        context.newRecord.Status = SRV_CaseService.IN_PROGRESS_STATUS;
+        context.newRecord.FrontOfficeResult__c = null;
+    }
+
+    /**
+     * Method sets Case record as Voided
+     * 
+     * @since    2019-06-11
+     * @param  WorkflowContext context that the method operates on
+    **/
+    public static void setVoided(SRV_Workflow.WorkflowContext context) {
+        
+        context.newRecord.OwnerId = getSystemUserId();
+        context.newRecord.ReadOnlyStatus__c = 'read';
+        context.newRecord.Status = SRV_CaseService.VOIDED_STATUS;
+    }
+    
+    /**
+     * Method sets Case record as Completed
+     * 
+     * @since    2019-06-11
+     * @param  WorkflowContext context that the method operates on
+    **/
+    public static void setCompleted(SRV_Workflow.WorkflowContext context) {
+        
+        context.newRecord.OwnerId = getSystemUserId();
+        context.newRecord.ReadOnlyStatus__c = 'read';
+        context.newRecord.Status = SRV_CaseService.COMPLETED_STATUS;
+    }
+    
+    /**
+     * Method applies Close action on the Case record
+     * 
+     * @since    2019-06-11
+     * @param  WorkflowContext context that the method operates on
+    **/
+    public static void applyClose(SRV_Workflow.WorkflowContext context) {
+        
+        context.newRecord.ReadOnlyStatus__c = 'read';
+        context.newRecord.OwnerId = getSystemUserId();
+        
+        if (context.newRecord.Status == SRV_CaseService.APPROVED_AND_PENDING_ACTION_STATUS) {
+            context.newRecord.Status = SRV_CaseService.APPROVED_STATUS;
+            return;
+        }
+        
+        if (context.newRecord.Status == SRV_CaseService.DENIED_AND_PENDING_ACTION_STATUS) {                
+            context.newRecord.Status = SRV_CaseService.DENIED_STATUS;
+            return;
+        }
+    }
+    
+    /**
+     * Method sets Case record as Approved
+     * 
+     * @since    2019-06-11
+     * @param  WorkflowContext context that the method operates on
+    **/
+    public static void setApproved(SRV_Workflow.WorkflowContext context) {
+        
+        context.newRecord.ReadOnlyStatus__c = 'read';
+        context.newRecord.OwnerId = getSystemUserId();
+        context.newRecord.Status = SRV_CaseService.APPROVED_STATUS;
+    }
+    
+    /**
+     * Method sets Case record as Denied
+     * 
+     * @since    2019-06-11
+     * @param  WorkflowContext context that the method operates on
+    **/
+    public static void setDenied(SRV_Workflow.WorkflowContext context) {
+        
+        context.newRecord.ReadOnlyStatus__c = 'read';
+        context.newRecord.OwnerId = getSystemUserId();
+        context.newRecord.Status = SRV_CaseService.DENIED_STATUS;
+    }
+    
+    /**
+     * Method refresh certain fields on context.newRecord based on context.snapShot
+     * 
+     * @since    2019-07-23
+     * @param  WorkflowContext context that the method operates on
+    **/
+    public static void refreshFromSnapShot(SRV_Workflow.WorkflowContext context) {
+        
+        context.newRecord.Id = context.snapShot.Id;
+        context.newRecord.TicketId__c = context.snapShot.TicketId__c;
+        context.newRecord.Status = context.snapShot.Status;
+        context.newRecord.Action__c = context.snapShot.Action__c;
+        context.newRecord.OwnerId = context.snapShot.OwnerId;
+        context.newRecord.Workflow__c = context.snapShot.Workflow__c;
+        context.newRecord.FrontOfficeResult__c = context.snapShot.FrontOfficeResult__c;
+        context.newRecord.IsSystemUpdate_cb__c = context.snapShot.IsSystemUpdate_cb__c;
+        context.snapShot = null;
+    }
+    
+    /**
+     * Method resets Cases fields that drive Workflows to null value.
+     * 
+     * @since    2019-07-23
+     * @param  List<SRV_Workflow.WorkflowContext> contexts : contexts that the method operates on
+    **/
+    public static void cleanWorkflowTriggerFields(List<SRV_Workflow.WorkflowContext> contexts) {
+        if (contexts == null) {
+            return;
+        }
+        for (SRV_Workflow.WorkflowContext context : contexts) {
+            cleanWorkflowTriggerFields(context);
+        }
+    }
+    
+    /**
+     * Method resets Cases fields that drive Workflows to null value.
+     * 
+     * @since    2019-07-23
+     * @param  WorkflowContext context : context that the method operates on
+    **/
+    public static void cleanWorkflowTriggerFields(SRV_Workflow.WorkflowContext context) {
+        cleanWorkflowTriggerFields(context.newRecord);
+        context.CustomFormData = null;
+    }
+    
+    /**
+     * Method resets Cases fields that drive Workflows to null value.
+     * 
+     * @since    2019-08-10
+     * @param  WorkflowContext context : context that the method operates on
+    **/
+    public static void cleanWorkflowTriggerFields(Case cse) {
+        cse.Action__c = null;
+        cse.FrontOfficeResult__c = null;
+    }
+    
+    /**
+     * Method sets Custom Form as read only based on Status
+     * 
+     * @since    2019-08-20
+     * @param  List<WorkflowContext> contexts : contexts that the method operates on
+    **/
+    public static void setCustomFormReadOnlyByStatus(List<SRV_Workflow.WorkflowContext> contexts) {
+        for (SRV_Workflow.WorkflowContext context : contexts) {
+          
+            if (context.newRecord.ReadOnlyStatus__c == 'read') {
+               setCustomFormReadonlyStatusNull(context);
+               continue;
+            }
+            
+            if (context.newRecord.Status == SRV_CaseService.PENDING_APPROVAL_STATUS
+               || context.newRecord.Status == SRV_CaseService.PENDING_FIRST_APPROVAL_STATUS
+               || context.newRecord.Status == SRV_CaseService.PENDING_SECOND_APPROVAL_STATUS
+               || context.newRecord.Status == SRV_CaseService.PENDING_THIRD_APPROVAL_STATUS
+                
+               || context.newRecord.Status == SRV_CaseService.APPROVED_SYSTEM_ERROR_STATUS
+               || context.newRecord.Status == SRV_CaseService.APPROVED_BUT_ERROR_STATUS
+               || context.newRecord.Status == SRV_CaseService.APPROVED_AND_PROCESSING_STATUS
+               || context.newRecord.Status == SRV_CaseService.APPROVED_AND_PENDING_ACTION_STATUS
+               || context.newRecord.Status == SRV_CaseService.APPROVED_STATUS
+                
+               || context.newRecord.Status == SRV_CaseService.DENIED_AND_PROCESSING_STATUS
+               || context.newRecord.Status == SRV_CaseService.DENIED_SYSTEM_ERROR_STATUS
+               || context.newRecord.Status == SRV_CaseService.DENIED_AND_PENDING_ACTION_STATUS
+               || context.newRecord.Status == SRV_CaseService.DENIED_STATUS
+                
+               || context.newRecord.Status == SRV_CaseService.CLOSED_STATUS
+               || context.newRecord.Status == SRV_CaseService.VOIDED_STATUS
+               || context.newRecord.Status == SRV_CaseService.COMPLETE_STATUS
+               || context.newRecord.Status == SRV_CaseService.COMPLETED_STATUS
+
+               || context.newRecord.Status == SRV_CaseService.SYSTEM_PROCESSING_STATUS
+               || context.newRecord.Status == SRV_CaseService.SYSTEM_ERROR_STATUS
+               || context.newRecord.Status == SRV_CaseService.ERROR_STATUS) {
+                   
+                context.newRecord.ReadOnlyStatus__c = 'read';
+                setCustomFormReadonlyStatusNull(context);
+
+               
+            }
+        }
+    }
+
+
+/**
+     * Method sets Custom Form readonly status null if validation required to be sent to FO
+     * 
+     * @since    2021-11-22
+     * @param  SRV_Workflow.WorkflowContext context : context that the method operates on
+    **/
+   private static void setCustomFormReadonlyStatusNull(SRV_Workflow.WorkflowContext context) 
+    {
+
+         List<WorkflowAction__mdt> actions = new List<WorkflowAction__mdt>();
+         actions = new SRV_WorkflowActionSelector().selectByCaseStatus(context.newRecord.Status);
+         List<WorkflowAction__mdt> validationCategories = new List<WorkflowAction__mdt>();
+         for (WorkflowAction__mdt action : actions){
+             if (action.ValidationCaseCategories_ta__c != null){
+                        validationCategories.add(action);
+
+             }
+
+         }
+
+        if (validationCategories.size()>0) {
+            Map<Id, CaseCategory__c> categories =  new Map<Id, CaseCategory__c>(new SRV_CaseCategorySelector().selectByIdForCustomForm(context.newRecord.PrimaryCaseCategory__c));
+            for (WorkflowAction__mdt validationCategory : validationCategories){
+                if (context.newRecord.Workflow__c == validationCategory.Workflow__c || (validationCategory.Workflow__c==null || String.isEmpty(validationCategory.Workflow__c))){
+                    List<String> caseCategories = validationCategory.ValidationCaseCategories_ta__c.split(',');
+                    for (String categoryId: caseCategories){
+                        if (categories.get(context.newRecord.PrimaryCaseCategory__c).CategoryId__c == categoryId){
+                            context.newRecord.ReadOnlyStatus__c =null;
+                            break;
+                        }
+                    
+                    }
+                }
+                
+            }
+        }
+
+    } 
+
+
+    /**
+     * Method sets status InProgress for NoApproval Cases and return only Cases that are not in
+     * the middle of workflow and are not processed.
+     * 
+     * @since    2019-08-20
+     * @param  List<WorkflowContext> contexts : contexts that the method operates on
+    **/
+    public static List<SRV_Workflow.WorkflowContext> identifyProspectiveAndSetDefaults(List<SRV_Workflow.WorkflowContext> contexts) {
+        
+        List<SRV_Workflow.WorkflowContext> prospective = new List<SRV_Workflow.WorkflowContext>();
+        
+        for (SRV_Workflow.WorkflowContext context : contexts) {
+            
+            if (context.newRecord.Status != null
+                && context.newRecord.Status != SRV_CaseService.NEW_STATUS
+                && context.newRecord.Status != SRV_CaseService.IN_PROGRESS_STATUS) {
+                    continue;
+                }
+            
+            prospective.add(context);
+            
+            // default status for newly created NoApproval Case is InProgress
+            if (context.newRecord.Workflow__c != null
+                && context.newRecord.Workflow__c.contains('NoApproval')) {
+                setInProgress(context);
+            }            
+        }
+        
+        return prospective;
+    }
+    
+    /**
+     * Method presets the Status and Owner on Cases that are being created
+     * by integration user and are assigned to system or nobody
+     * 
+     * @since    2020-01-28
+     * @param  List<Case> cases : list of Cases to be processed
+    **/
+    public static void updateSystemCreatedCases(List<Case> cases) {
+        if (cases == null || cases.size() == 0) {
+            return;
+        }
+        
+        // determine if the current user is system user
+        List<User> integrationUsers = new SRV_UserSelector().selectByIdAndAlias(UserInfo.getUserId(), 'dimule');
+        
+        // if current user is not integration user, there is nothing to be done
+        if (integrationUsers == null || integrationUsers.size() == 0) {
+            return;
+        }
+        
+        Id systemUserId = getSystemUserId();
+		
+        // identify Cases that are assigned to nobody, or system user
+        // and have got PrimaryCaseCategory configured
+		List<Case> casesToUpdate = new List<Case>();
+		Set<Id> caseCategories = new Set<Id>();
+        for (Case cse : cases) {
+            
+            if ((cse.OwnerId == null || cse.OwnerId == systemUserId) && cse.PrimaryCaseCategory__c != null) {
+                casesToUpdate.add(cse);
+                caseCategories.add(cse.PrimaryCaseCategory__c);
+            }
+        }
+        
+        if (casesToUpdate.isEmpty()) {
+            return;
+        }
+        
+        // select categories with SystemCreatedConfiguration
+        Map<Id, CaseCategory__c> categories =
+            new Map<Id, CaseCategory__c>(new SRV_CaseCategorySelector().selectByIdWithSystemCreatedAssignment(caseCategories));
+        
+        // update Case based on the CaseCategory configuration
+        // if it configuration exists
+        for (Case cse : casesToUpdate) {
+            if (categories.containsKey(cse.PrimaryCaseCategory__c)) {
+                cse.OwnerId = categories.get(cse.PrimaryCaseCategory__c).SystemCreatedAssignmentId_t__c;
+                cse.Status = SRV_CaseService.IN_PROGRESS_STATUS;
+            }
+        }
+    }
+}

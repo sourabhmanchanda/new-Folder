@@ -1,0 +1,945 @@
+@isTest
+public class SRV_WorkflowServiceUtilTestMock {
+    @isTest
+    public static void refreshFromSnapShotMockTest() {
+        Id caseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        Case newCase = new Case(Id=caseId,TicketId__c='ticketId',Status='1',Action__c = 'action',OwnerId = UserInfo.getUserId(),Workflow__c = 'workflow',FrontOfficeResult__c = 'result');
+        
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(null, new Case(), null);
+        context.snapShot = new Case(Id = caseId);
+        context.newRecord = new Case();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.refreshFromSnapShot(context);
+        mocks.stopStubbing();
+        
+        System.assertEquals(newCase.Id, context.newRecord.Id);
+        System.assertEquals(null, context.snapShot);
+    }
+    
+    @isTest
+    public static void enqueueForDecompressionMockTest_decompressionOnCreate() {
+        SRV_TestInternalUserFactory.retrieveOrCreateSystemUser();
+        Id caseId = fflib_IdGenerator.generate(Case.getSobjectType());
+
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        Case newCase = new Case(Id=caseId,TicketId__c='ticketId',Status=SRV_CaseService.NEW_STATUS,Action__c = 'action',OwnerId = UserInfo.getUserId(),Workflow__c = 'workflow',FrontOfficeResult__c = 'result');
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(null, newCase, null);
+        
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.enqueueForDecompression(context, true);
+        SRV_WorkflowServiceUtil.enqueueForDecompression(context, false);
+        mocks.stopStubbing();
+        
+        System.assertEquals(newCase.Id, context.snapShot.Id);
+        System.assertEquals('ticketId', context.snapShot.TicketId__c);
+        
+        SRV_TestWorkflowUtil.verifyDecompressionPrepared(newCase, true);
+    }
+    
+    @isTest
+    public static void enqueueForDecompressionMockTest_decompressionOnUpdate() {
+        SRV_TestInternalUserFactory.retrieveOrCreateSystemUser();
+        Id caseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        
+        Case newCase = new Case(Id=caseId,TicketId__c='ticketId',Status=SRV_CaseService.NEW_STATUS,Action__c = 'action',OwnerId = UserInfo.getUserId(),Workflow__c = 'workflow',FrontOfficeResult__c = 'result');
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(null, newCase, null);
+        
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.enqueueForDecompression(context, true);
+        mocks.stopStubbing();
+        
+        System.assertEquals(newCase.Id, context.snapShot.Id);
+        System.assertEquals('ticketId', context.snapShot.TicketId__c);
+        System.assertEquals('action', context.snapShot.Action__c);
+        System.assertEquals('workflow', context.snapShot.Workflow__c);
+        System.assertEquals('result', context.snapShot.FrontOfficeResult__c);
+        System.assertEquals(UserInfo.getUserId(), context.snapShot.OwnerId);
+        System.assertEquals(SRV_CaseService.NEW_STATUS, context.snapShot.Status);
+        System.assertEquals(SRV_Workflow.CalloutType.DECOMPRESS_ON_CREATION, context.getCalloutType());
+        
+        SRV_TestWorkflowUtil.verifyDecompressionPrepared(newCase, true);
+    }
+    
+    @isTest
+    public static void trackActionPerformedMockTest_nullInput(){
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.trackActionPerformed(null);
+        mocks.stopStubbing();
+    }
+    
+    @isTest
+    public static void trackActionPerformedMockTest_noAction() {
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(new Case(), new Case(), null);
+        
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.trackActionPerformed(new List<SRV_Workflow.WorkflowContext>{context});
+        mocks.stopStubbing();
+        
+        System.assertEquals(null, context.newRecord.PreviousUser__c);
+        System.assertEquals(null, context.newRecord.ActionPerformed__c);
+    }
+    
+    @isTest
+    public static void trackActionPerformedMockTest_SubmitAction() {
+        Id caseId1 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Id caseId2 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case oldRecord = new Case(Id=caseId1);
+        Case newRecord = new Case(Id=caseId2,Action__c=SRV_CaseService.SUBMIT_FOR_APPROVAL_ACTION);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(oldRecord, newRecord, null);
+        
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.trackActionPerformed(new List<SRV_Workflow.WorkflowContext>{context});
+		mocks.stopStubbing();     
+        
+        System.assertEquals(UserInfo.getUserId(), context.newRecord.PreviousUser__c);
+        System.assertEquals(newRecord.Action__c, context.newRecord.ActionPerformed__c);
+    }
+    
+    @isTest
+    public static void trackActionPerformedMockTest_ForwardAction() {
+        Id newAssignee = SRV_TestGroupFactory.createCaseQueue('action_track_test').Id;
+        Id caseId1 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case oldRecord = new Case(Id=caseId1,OwnerId = newAssignee);
+        Id caseId2 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newRecord = new Case(Id=caseId2,Action__c=SRV_CaseService.FORWARD_ACTION);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(oldRecord, newRecord, null);
+        
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.trackActionPerformed(new List<SRV_Workflow.WorkflowContext>{context});
+		mocks.stopStubbing();
+        
+        System.assertEquals(oldRecord.OwnerId, context.newRecord.PreviousUser__c);
+        System.assertEquals(newRecord.Action__c, context.newRecord.ActionPerformed__c);
+    }
+    
+    @isTest
+    public static void trackActionPerformedMockTest_ReplyAction() {
+        Id newAssignee = SRV_TestGroupFactory.createCaseQueue('action_track_test').Id;
+        Id caseId1 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case oldRecord = new Case(Id=caseId1,OwnerId = newAssignee);
+        Id caseId2 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newRecord = new Case(Id=caseId2,Action__c=SRV_CaseService.REPLY_ACTION);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(oldRecord, newRecord, null);
+        
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.trackActionPerformed(new List<SRV_Workflow.WorkflowContext>{context});
+		mocks.stopStubbing();
+        
+        System.assertEquals(oldRecord.OwnerId, context.newRecord.PreviousUser__c);
+        System.assertEquals(newRecord.Action__c, context.newRecord.ActionPerformed__c);
+    }
+    
+    @isTest
+    public static void enqueueForFOProcessingMockTest() {
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        
+        SRV_TestInternalUserFactory.retrieveOrCreateSystemUser();
+        
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(new Case(), new Case(), null);
+        
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.enqueueForFOProcessing(context, SRV_CaseService.APPROVED_AND_PROCESSING_STATUS);
+        mocks.stopStubbing();
+        
+        SRV_TestWorkflowUtil.verifyDynamicFOCallPrepared(context.newRecord, SRV_CaseService.APPROVED_AND_PROCESSING_STATUS, true);
+        
+        System.assertEquals(SRV_Workflow.CalloutType.FRONT_OFFICE_DATA_FORWARD, context.getCalloutType());
+    }
+    
+    @isTest
+    public static void getSystemUserIdMockTest() {
+		Id systemUserId = fflib_IdGenerator.generate(User.getSobjectType());
+        List <User> externUser = new List<User>();
+        
+        externUser.add(
+                new User(
+                        Id = systemUserId,
+                        FirstName = 'system',
+                    	LastName = 'User1'
+                )
+        );
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        SRV_UserSelectorWOSharing usrSelector= (SRV_UserSelectorWOSharing) mocks.mock(SRV_UserSelectorWOSharing.class);
+        
+        mocks.startStubbing();
+        mocks.when(usrSelector.sObjectType()).thenReturn(User.sObjectType);
+        mocks.when(usrSelector.selectByExternalId('System')).thenReturn(null);
+        Id sId = SRV_WorkflowServiceUtil.getSystemUserId();
+        mocks.stopStubbing();
+    }
+    
+    @isTest
+    public static void submitForApprovalMockTest(){
+        Id caseId1 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Id caseId2 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case oldRecord = new Case(Id=caseId1);
+        Case newRecord = new Case(Id=caseId2,ReadOnlyStatus__c='read',Status=SRV_CaseService.PENDING_APPROVAL_STATUS);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(oldRecord, newRecord, null);
+        
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.submitForApproval(context,true);
+        mocks.stopStubbing();
+   }
+    
+    @isTest
+    public static void submitForSecondApprovalMockTest() {
+        Id newRecordId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newRecord = new Case(Id=newRecordId,ReadOnlyStatus__c = 'read',Status = SRV_CaseService.PENDING_SECOND_APPROVAL_STATUS);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(new Case(), newRecord, null);
+        
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.submitForSecondApproval(context);
+        mocks.stopStubbing();
+
+    }
+    
+    @isTest
+    public static void submitForThirdApprovalMockTest() {
+        Id newRecordId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newRecord = new Case(Id=newRecordId,ReadOnlyStatus__c = 'read',Status = SRV_CaseService.PENDING_THIRD_APPROVAL_STATUS);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(new Case(), newRecord, null);
+        
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.submitForThirdApproval(context);
+        mocks.stopStubbing();
+    }
+    
+    /*
+    @isTest
+    public static void stampDynamicWorkflowConfigurationMockTest_dynamicWorkflowCase() {
+        Id ccId = fflib_IdGenerator.generate(CaseCategory__c.getSobjectType());
+        CaseCategory__c cc = new CaseCategory__c(Id=ccId);
+        cc = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('Dynamic_ForkedApproval_SC_ITS_001', '0', false);
+        List<Group> queues = SRV_TestGroupFactory.createCaseQueues(1, 8, 'stampingUnitTest');
+        system.debug('cc--->' + cc);
+        system.debug('queues--->' + queues);
+        cc.AlternativeAssigneeDefaultId_t__c = queues[0].Id;
+        cc.AlternativeAssignee1Id_t__c = queues[1].Id;
+        cc.AlternativeAssignee2Id_t__c = queues[2].Id;
+        cc.AlternativeAssignee3Id_t__c = queues[3].Id;
+        cc.AlternativeAssignee4Id_t__c = queues[4].Id;
+        cc.AlternativeAssignee5Id_t__c = queues[5].Id;
+        cc.AlternativeAssignee4Id_t__c = queues[4].Id;
+        cc.AlternativeAssignee5Id_t__c = queues[5].Id;
+        
+        Id caseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase = new Case(Id=caseId);
+        newCase = SRV_TestCaseFactory.createCase(false);
+        newCase.PrimaryCaseCategory__c = cc.Id;
+
+        Set<Id> ccIdSet = new Set<Id>();
+        ccIdSet.add(ccId);
+        List<CaseCategory__c> ccList = new List<CaseCategory__c>{cc};
+        
+		fflib_ApexMocks mocks = new fflib_ApexMocks();
+        SRV_CaseCategorySelectorWithoutSharing ccsws = (SRV_CaseCategorySelectorWithoutSharing) mocks.mock(SRV_CaseCategorySelectorWithoutSharing.class);
+            
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.stampDynamicWorkflowConfiguration(new List<Case>{newCase});
+        mocks.when(ccsws.sObjectType()).thenReturn(CaseCategory__c.SObjectType);
+        mocks.when(ccsws.selectByIdForWorkflowStamping(ccIdSet)).thenReturn(ccList);
+        mocks.stopStubbing(); 
+        
+        System.assertEquals(cc.Workflow__c, newCase.Workflow__c);
+        System.assertEquals(cc.FirstLevelApproverId__c, newCase.FirstLevelApproverId__c);
+        System.assertEquals(cc.SecondLevelApproverId__c, newCase.SecondLevelApproverId__c);
+        System.assertEquals(cc.ThirdLevelApproverId__c, newCase.ThirdLevelApproverId__c);
+        System.assertEquals(cc.ErrorAssignmentId__c, newCase.ErrorAssignmentId__c);
+        System.assertEquals(cc.PendingActionsAssignmentId__c, newCase.PendingActionsAssignmentId__c);
+        System.assertEquals(cc.AlternativeAssigneeDefaultId_t__c, newCase.AlternativeAssigneeDefaultId_t__c);
+        System.assertEquals(cc.AlternativeAssignee1Id_t__c, newCase.AlternativeAssignee1Id_t__c);
+        System.assertEquals(cc.AlternativeAssignee2Id_t__c, newCase.AlternativeAssignee2Id_t__c);
+        System.assertEquals(cc.AlternativeAssignee3Id_t__c, newCase.AlternativeAssignee3Id_t__c);
+    }
+    
+    @isTest
+    public static void stampDynamicWorkflowConfigurationMockTest_noWorkflowCaseCategory() {
+        Id ccId = fflib_IdGenerator.generate(CaseCategory__c.getSobjectType());
+        CaseCategory__c cc = new CaseCategory__c(Id=ccId,Workflow__c = null);
+	    cc = SRV_TestCaseCategoryFactory.generateCaseCategories(1, false).get(0);
+
+        Id caseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase = new Case(Id=caseId);
+        newCase = SRV_TestCaseFactory.createCase(false);
+        newCase.PrimaryCaseCategory__c = cc.Id;
+        
+		
+        // just testing that method does not fail, when no workflow is assigned to the
+        // Case Category
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.stampDynamicWorkflowConfiguration(new List<Case>{newCase});
+        mocks.stopStubbing(); 
+    }
+    
+    @isTest
+    public static void stampDynamicWorkflowConfigurationMockTest_noCaseCategory() {
+        
+        Id caseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase = new Case(Id=caseId);
+        newCase = SRV_TestCaseFactory.createCase(true);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        // just testing that method does not fail, when no Case Category is assigned to Case
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.stampDynamicWorkflowConfiguration(new List<Case>{newCase});
+        mocks.stopStubbing();
+    }
+    
+    @isTest
+    public static void stampDynamicWorkflowConfigurationMockTest_emptyInputs() {
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.stampDynamicWorkflowConfiguration(new List<Case>());
+        SRV_WorkflowServiceUtil.stampDynamicWorkflowConfiguration(null);
+        mocks.stopStubbing();
+        		
+    }
+	*/
+    /*
+    @isTest
+    public static void stampDynamicWorkflowConfigurationMockTest_NULLInput() {
+        Id ccId = fflib_IdGenerator.generate(CaseCategory__c.getSobjectType());
+        CaseCategory__c cc = new CaseCategory__c(Id=ccId,Workflow__c = null);
+        
+        Id caseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase = new Case(Id=caseId,PrimaryCaseCategory__c = null);
+        system.debug('cc---> ' + cc);
+        system.debug('newCase---> ' + newCase);
+        
+        Set<Id> ccIdSet = new Set<Id>();
+        ccIdSet.add(ccId);
+        List<CaseCategory__c> ccList = new List<CaseCategory__c>{cc};
+            
+        fflib_ApexMocks mocks = new fflib_ApexMocks();    
+
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.stampDynamicWorkflowConfiguration(new List<Case>{newCase});
+        mocks.stopStubbing();        		
+    }
+    */
+     @isTest
+    public static void stampDynamicWorkflowConfigurationMockTest() {
+        Id ccId = fflib_IdGenerator.generate(CaseCategory__c.getSobjectType());
+        CaseCategory__c cc = new CaseCategory__c(Id=ccId,Workflow__c = null);
+        
+        Id caseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase = new Case(Id=caseId,PrimaryCaseCategory__c = cc.Id);
+        Set<Id> ccIdSet = new Set<Id>();
+        ccIdSet.add(ccId);
+        
+        List<CaseCategory__c> ccList = new List<CaseCategory__c>{cc};
+            
+        fflib_ApexMocks mocks = new fflib_ApexMocks();    
+        SRV_CaseCategorySelectorWithoutSharing ccsws = (SRV_CaseCategorySelectorWithoutSharing) mocks.mock(SRV_CaseCategorySelectorWithoutSharing.class);
+
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.stampDynamicWorkflowConfiguration(new List<Case>{newCase});
+        mocks.when(ccsws.sObjectType()).thenReturn(CaseCategory__c.SObjectType);
+        mocks.when(ccsws.selectByIdForWorkflowStamping(ccIdSet)).thenReturn(ccList);
+        mocks.stopStubbing();
+    }
+    
+    @isTest 
+    public static void setInProgressMockTest() {  
+        List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        Id inProgressCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case inProgressCse = new Case(Id=inProgressCseId,ReadOnlyStatus__c = 'write',Status = SRV_CaseService.IN_PROGRESS_STATUS,FrontOfficeResult__c = null);
+        SRV_Workflow.WorkflowContext inProgressCntx = new SRV_Workflow.WorkflowContext(new Case(), inProgressCse, null);
+        contexts.add(inProgressCntx);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.setInProgress(inProgressCntx);
+        mocks.stopStubbing();
+    }
+    
+    @isTest 
+    public static void setVoidedMockTest(){
+        List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        Id systemusrId = fflib_IdGenerator.generate(User.getSobjectType());
+        Id newRecordId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newRecord = new Case(Id=newRecordId,OwnerId = systemusrId,ReadOnlyStatus__c = 'read',Status = SRV_CaseService.VOIDED_STATUS);
+        SRV_Workflow.WorkflowContext inVoidedCntx = new SRV_Workflow.WorkflowContext(new Case(), newRecord, null);
+        contexts.add(inVoidedCntx);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.setVoided(inVoidedCntx);
+        mocks.stopStubbing();    
+    }
+    @isTest
+    public static void setCompletedMockTest() {
+        List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        Id systemusrId = fflib_IdGenerator.generate(User.getSobjectType());
+        Id newRecordId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newRecord = new Case(Id=newRecordId,OwnerId = systemusrId,ReadOnlyStatus__c = 'read',Status = SRV_CaseService.COMPLETED_STATUS);
+        SRV_Workflow.WorkflowContext inCompletedCntx = new SRV_Workflow.WorkflowContext(new Case(), newRecord, null);
+        contexts.add(inCompletedCntx);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.setCompleted(inCompletedCntx);
+        mocks.stopStubbing();   
+    }
+    
+    @isTest
+    public static void setApprovedMockTest() {
+        List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        Id systemusrId = fflib_IdGenerator.generate(User.getSobjectType());
+        Id newRecordId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newRecord = new Case(Id=newRecordId,OwnerId = systemusrId,ReadOnlyStatus__c = 'read',Status = SRV_CaseService.APPROVED_STATUS);
+        SRV_Workflow.WorkflowContext inApprovedCntx = new SRV_Workflow.WorkflowContext(new Case(), newRecord, null);
+        contexts.add(inApprovedCntx);
+
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.setApproved(inApprovedCntx);
+        mocks.stopStubbing(); 
+    }
+    
+    @isTest
+    public static void setDeniedMockTest() {
+        List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        Id systemusrId = fflib_IdGenerator.generate(User.getSobjectType());
+        Id newRecordId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newRecord = new Case(Id=newRecordId,OwnerId = systemusrId,ReadOnlyStatus__c = 'read',Status = SRV_CaseService.DENIED_STATUS);
+        SRV_Workflow.WorkflowContext inDeniedCntx = new SRV_Workflow.WorkflowContext(new Case(), newRecord, null);
+        contexts.add(inDeniedCntx);
+
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.setDenied(inDeniedCntx);
+        mocks.stopStubbing(); 
+    }
+    
+    @isTest
+    public static void setCustomFormReadOnlyByStatusMockTest_readOnlyStatusesCntx() {
+    	List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        Id newCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case ReadOnlyStatusCse = new Case(Id=newCaseId,ReadOnlyStatus__c = 'read');
+        SRV_Workflow.WorkflowContext ReadOnlyStatusCntx = new SRV_Workflow.WorkflowContext(new Case(), ReadOnlyStatusCse, null);
+        contexts.add(ReadOnlyStatusCntx);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.setCustomFormReadOnlyByStatus(contexts);
+        mocks.stopStubbing();
+    }
+    
+    @isTest
+    public static void setCustomFormReadOnlyByStatusMockTest_readOnlyStatuses() {
+
+        List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        Id ccId = fflib_IdGenerator.generate(CaseCategory__c.getSobjectType());
+        CaseCategory__c caseCat = new CaseCategory__c(Id=ccId);
+        
+        Id pendingApprovalCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case pendingApprovalCse = new Case(Id=pendingApprovalCseId,Status = SRV_CaseService.PENDING_APPROVAL_STATUS);
+        SRV_Workflow.WorkflowContext pendingApprovalCntx = new SRV_Workflow.WorkflowContext(new Case(), pendingApprovalCse, null);
+        contexts.add(pendingApprovalCntx);
+        
+        Id pendingFirstApprovalCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case pendingFirstApprovalCse = new Case(Id=pendingFirstApprovalCseId,Status = SRV_CaseService.PENDING_FIRST_APPROVAL_STATUS);
+        SRV_Workflow.WorkflowContext pendingFirstApprovalCntx = new SRV_Workflow.WorkflowContext(new Case(), pendingFirstApprovalCse, null);
+        contexts.add(pendingFirstApprovalCntx);
+        
+        Id pendingSecondApprovalCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case pendingSecondApprovalCse = new Case(Id=pendingSecondApprovalCseId,Status = SRV_CaseService.PENDING_SECOND_APPROVAL_STATUS);
+        SRV_Workflow.WorkflowContext pendingSecondApprovalCntx = new SRV_Workflow.WorkflowContext(new Case(), pendingSecondApprovalCse, null);
+        contexts.add(pendingSecondApprovalCntx);
+        
+        Id pendingThirdApprovalCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case pendingThirdApprovalCse = new Case(Id=pendingThirdApprovalCseId,Status = SRV_CaseService.PENDING_THIRD_APPROVAL_STATUS);
+        SRV_Workflow.WorkflowContext pendingThirdApprovalCntx = new SRV_Workflow.WorkflowContext(new Case(), pendingThirdApprovalCse, null);
+        contexts.add(pendingThirdApprovalCntx);
+        
+        Id approvedSystemErrorCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case approvedSystemErrorCse = new Case(Id=approvedSystemErrorCseId,Status = SRV_CaseService.APPROVED_SYSTEM_ERROR_STATUS);
+        SRV_Workflow.WorkflowContext approvedSystemErrorCntx = new SRV_Workflow.WorkflowContext(new Case(), approvedSystemErrorCse, null);
+        contexts.add(approvedSystemErrorCntx);
+        
+        Id approvedButErrorCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case approvedButErrorCse = new Case(Id=approvedButErrorCseId,Status = SRV_CaseService.APPROVED_BUT_ERROR_STATUS);
+        SRV_Workflow.WorkflowContext approvedButErrorCntx = new SRV_Workflow.WorkflowContext(new Case(), approvedButErrorCse, null);
+        contexts.add(approvedButErrorCntx);
+        
+        Id approvedAndProcessingCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case approvedAndProcessingCse = new Case(Id=approvedAndProcessingCseId,Status = SRV_CaseService.APPROVED_AND_PROCESSING_STATUS);
+        SRV_Workflow.WorkflowContext approvedAndProcessingCntx = new SRV_Workflow.WorkflowContext(new Case(), approvedAndProcessingCse, null);
+        contexts.add(approvedAndProcessingCntx);
+
+		Id approvedAndPendingActionCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case approvedAndPendingActionCse = new Case(Id=approvedAndPendingActionCseId,Status = SRV_CaseService.APPROVED_AND_PENDING_ACTION_STATUS);
+        SRV_Workflow.WorkflowContext approvedAndPendingActionCntx = new SRV_Workflow.WorkflowContext(new Case(), approvedAndPendingActionCse, null);
+        contexts.add(approvedAndPendingActionCntx);
+        
+		Id approvedCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case approvedCse = new Case(Id=approvedCseId,Status = SRV_CaseService.APPROVED_STATUS);
+        SRV_Workflow.WorkflowContext approvedCntx = new SRV_Workflow.WorkflowContext(new Case(), approvedCse, null);
+        contexts.add(approvedCntx);
+        
+        Id deniedAndProcessingCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case deniedAndProcessingCse = new Case(Id=deniedAndProcessingCseId,Status = SRV_CaseService.DENIED_AND_PROCESSING_STATUS);
+        SRV_Workflow.WorkflowContext deniedAndProcessingCntx = new SRV_Workflow.WorkflowContext(new Case(), deniedAndProcessingCse, null);
+        contexts.add(deniedAndProcessingCntx);
+        
+        Id deniedSystemErrorCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case deniedSystemErrorCse = new Case(Id=deniedSystemErrorCseId,Status = SRV_CaseService.DENIED_SYSTEM_ERROR_STATUS);
+        SRV_Workflow.WorkflowContext deniedSystemErrorCntx = new SRV_Workflow.WorkflowContext(new Case(), deniedSystemErrorCse, null);
+        contexts.add(deniedSystemErrorCntx);
+        
+        Id deniedAndPendingActionCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case deniedAndPendingActionCse = new Case(Id=deniedAndPendingActionCseId,Status = SRV_CaseService.DENIED_AND_PENDING_ACTION_STATUS);
+        SRV_Workflow.WorkflowContext deniedAndPendingActionCntx = new SRV_Workflow.WorkflowContext(new Case(), deniedAndPendingActionCse, null);
+        contexts.add(deniedAndPendingActionCntx);
+        
+        Id deniedCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case deniedCse = new Case(Id=deniedCseId,Status = SRV_CaseService.DENIED_STATUS);
+        SRV_Workflow.WorkflowContext deniedCntx = new SRV_Workflow.WorkflowContext(new Case(), deniedCse, null);
+        contexts.add(deniedCntx);
+        
+        Id closedCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case closedCse = new Case(Id=closedCseId,Status = SRV_CaseService.CLOSED_STATUS);
+        SRV_Workflow.WorkflowContext closedCntx = new SRV_Workflow.WorkflowContext(new Case(), closedCse, null);
+        contexts.add(closedCntx);
+        
+        Id voidedCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case voidedCse = new Case(Id=voidedCseId,Status = SRV_CaseService.VOIDED_STATUS);
+        SRV_Workflow.WorkflowContext voidedCntx = new SRV_Workflow.WorkflowContext(new Case(), voidedCse, null);
+        contexts.add(voidedCntx);
+        
+        Id completedCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case completedCse = new Case(Id=completedCseId,Status = SRV_CaseService.COMPLETED_STATUS);
+        SRV_Workflow.WorkflowContext completedCntx = new SRV_Workflow.WorkflowContext(new Case(), completedCse, null);
+        contexts.add(completedCntx);
+        
+        Id completeCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case completeCse = new Case(Id=completeCseId,Status = SRV_CaseService.COMPLETE_STATUS);
+        SRV_Workflow.WorkflowContext completeCntx = new SRV_Workflow.WorkflowContext(new Case(), completeCse, null);
+        contexts.add(completeCntx);
+        
+        Id systemProcessingCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case systemProcessingCse = new Case(Id=systemProcessingCseId,Status = SRV_CaseService.SYSTEM_PROCESSING_STATUS);
+        SRV_Workflow.WorkflowContext systemProcessingCntx = new SRV_Workflow.WorkflowContext(new Case(), systemProcessingCse, null);
+        contexts.add(systemProcessingCntx);
+        
+        Id systemErrorCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case systemErrorCse = new Case(Id=systemErrorCseId,Status = SRV_CaseService.SYSTEM_ERROR_STATUS);
+        SRV_Workflow.WorkflowContext systemErrorCntx = new SRV_Workflow.WorkflowContext(new Case(), systemErrorCse, null);
+        contexts.add(systemErrorCntx);
+        
+        Id errorCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case errorCse = new Case(Id=errorCseId,Status = SRV_CaseService.ERROR_STATUS);
+        SRV_Workflow.WorkflowContext errorCntx = new SRV_Workflow.WorkflowContext(new Case(), errorCse, null);
+        contexts.add(errorCntx);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        
+        SRV_CaseCategorySelector ccselector = (SRV_CaseCategorySelector) mocks.mock(SRV_CaseCategorySelector.class);
+        List<CaseCategory__c> ccList = new List<CaseCategory__c>{caseCat};
+            
+        mocks.startStubbing();
+        mocks.when(ccselector.sObjectType()).thenReturn(CaseCategory__c.sObjectType);
+        mocks.when(ccselector.selectByIdForCustomForm(ccId)).thenReturn(ccList);
+        SRV_WorkflowServiceUtil.setCustomFormReadOnlyByStatus(contexts);
+        mocks.stopStubbing();
+        
+        for(SRV_Workflow.WorkflowContext context : contexts) {
+            System.assertEquals('read', context.newRecord.ReadOnlyStatus__c);
+        }
+    }
+    /*
+    @isTest
+    public static void setCustomFormReadonlyStatusNullMockTest() {
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        
+        Id newCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Id ccId = fflib_IdGenerator.generate(CaseCategory__c.getSobjectType());
+        CaseCategory__c caseCat = new CaseCategory__c(Id=ccId);
+        Case newCse = new Case(Id=newCaseId,Status = SRV_CaseService.NEW_STATUS);
+        SRV_Workflow.WorkflowContext contexts = new SRV_Workflow.WorkflowContext(new Case(), newCse, null);
+             
+        SRV_CaseCategorySelector ccselector = (SRV_CaseCategorySelector) mocks.mock(SRV_CaseCategorySelector.class);
+        List<CaseCategory__c> ccList = new List<CaseCategory__c>{caseCat};
+            
+        mocks.startStubbing();
+        mocks.when(ccselector.sObjectType()).thenReturn(CaseCategory__c.sObjectType);
+        mocks.when(ccselector.selectByIdForCustomForm(ccId)).thenReturn(ccList);
+        SRV_WorkflowServiceUtil.setCustomFormReadonlyStatusNull(contexts);
+        mocks.stopStubbing();
+        
+    } 
+    */
+    @isTest
+    public static void identifyProspectiveAndSetDefaultsMockTest_noApproval() {
+        
+   		 List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+    	 
+        // no Status NoApproval Case
+        Id noApprovalNoStatusCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case noApprovalNoStatusCase = new Case(Id=noApprovalNoStatusCaseId,Subject = 'noApprovalNoStatusCase',Workflow__c = 'aaNoApprovalaa');
+        SRV_Workflow.WorkflowContext noApprovalNoStatusCntx = new SRV_Workflow.WorkflowContext(new Case(), noApprovalNoStatusCase, null);
+        contexts.add(noApprovalNoStatusCntx);
+        
+        // New Status NoApproval Case
+        Id noApprovalNewCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case noApprovalNewCase = new Case(Id=noApprovalNewCaseId,Subject = 'noApprovalNewCase',Status = SRV_CaseService.NEW_STATUS,Workflow__c = 'aaNoApprovalaa');
+        SRV_Workflow.WorkflowContext noApprovalNewCntx = new SRV_Workflow.WorkflowContext(new Case(), noApprovalNewCase, null);
+        contexts.add(noApprovalNewCntx);
+        
+        // InProgress Status NoApproval Case
+        Id noApprovalInProgressCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case noApprovalInProgressCase = new Case(Id=noApprovalInProgressCaseId,Subject = 'noApprovalInProgressCase',Status = SRV_CaseService.IN_PROGRESS_STATUS,Workflow__c = 'aaNoApprovalaa');
+        SRV_Workflow.WorkflowContext noApprovalInProgressCntx = new SRV_Workflow.WorkflowContext(new Case(), noApprovalInProgressCase, null);
+        contexts.add(noApprovalInProgressCntx);
+        
+        // Denied Status NoApproval Case
+        Id noApprovalDeniedCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case noApprovalDeniedCse = new Case(Id=noApprovalDeniedCseId,Subject = 'noApprovalDeniedCse',Status = SRV_CaseService.DENIED_STATUS,Workflow__c = 'aaNoApprovalaa');
+        SRV_Workflow.WorkflowContext noApprovalDeniedCntx = new SRV_Workflow.WorkflowContext(new Case(), noApprovalDeniedCse, null);
+        contexts.add(noApprovalDeniedCntx);
+        
+        // Approved Status NoApproval Case
+        Id noApprovalApprovedCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case noApprovalApprovedCse = new Case(Id=noApprovalApprovedCseId,Status = SRV_CaseService.APPROVED_STATUS,Subject = 'noApprovalApprovedCse',Workflow__c = 'aaNoApprovalaa');
+        SRV_Workflow.WorkflowContext noApprovalApprovedCntx = new SRV_Workflow.WorkflowContext(new Case(), noApprovalApprovedCse, null);
+        contexts.add(noApprovalApprovedCntx);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        List<SRV_Workflow.WorkflowContext> prospectives = SRV_WorkflowServiceUtil.identifyProspectiveAndSetDefaults(contexts);
+        mocks.stopStubbing();
+        
+        // only Case with no status, New Status or InProgress status should have been returned
+        System.assertEquals(3, prospectives.size());
+        System.assertEquals(noApprovalNoStatusCase.Subject, prospectives.get(0).newRecord.Subject);
+        System.assertEquals(noApprovalNewCase.Subject, prospectives.get(1).newRecord.Subject);
+        System.assertEquals(noApprovalInProgressCase.Subject, prospectives.get(2).newRecord.Subject);
+        
+        // statuses should have been updated to InProgress
+        System.assertEquals(SRV_CaseService.IN_PROGRESS_STATUS, prospectives.get(0).newRecord.Status);
+        System.assertEquals(SRV_CaseService.IN_PROGRESS_STATUS, prospectives.get(1).newRecord.Status);
+        System.assertEquals(SRV_CaseService.IN_PROGRESS_STATUS, prospectives.get(2).newRecord.Status);
+    }
+  
+    @isTest
+    public static void identifyProspectiveAndSetDefaultsMockTest_nonNoApproval() {
+      	List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        // no Status Case
+        Id noStatusCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case noStatusCase = new Case(Id=noStatusCaseId,Subject = 'noStatusCase',Workflow__c = 'any');
+        SRV_Workflow.WorkflowContext noApprovalNoStatusCntx = new SRV_Workflow.WorkflowContext(new Case(), noStatusCase, null);
+        contexts.add(noApprovalNoStatusCntx);
+        
+        // New Status Case
+        Id newCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase = new Case(Id=newCaseId,Subject = 'newCase',Status = SRV_CaseService.NEW_STATUS,Workflow__c = 'any');
+        SRV_Workflow.WorkflowContext noApprovalNewCntx = new SRV_Workflow.WorkflowContext(new Case(), newCase, null);
+        contexts.add(noApprovalNewCntx);
+        
+        // InProgress Status Case
+        Id inProgressCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case inProgressCase = new Case(Id=inProgressCaseId,Subject = 'inProgressCase',Status = SRV_CaseService.IN_PROGRESS_STATUS,Workflow__c = 'any');
+        SRV_Workflow.WorkflowContext noApprovalInProgressCntx = new SRV_Workflow.WorkflowContext(new Case(), inProgressCase, null);
+        contexts.add(noApprovalInProgressCntx);
+        
+        // Denied Status Case
+        Id deniedCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case deniedCse = new Case(Id=deniedCseId,Subject = 'deniedCse',Status = SRV_CaseService.DENIED_STATUS,Workflow__c = 'any');
+        SRV_Workflow.WorkflowContext noApprovalDeniedCntx = new SRV_Workflow.WorkflowContext(new Case(), deniedCse, null);
+        contexts.add(noApprovalDeniedCntx);
+        
+        // Approved Status NoApproval Case
+        Id approvedCseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case approvedCse = new Case(Id=approvedCseId,Subject = 'approvedCse',Status = SRV_CaseService.DENIED_STATUS,Workflow__c = 'any');
+        SRV_Workflow.WorkflowContext noApprovalApprovedCntx = new SRV_Workflow.WorkflowContext(new Case(), approvedCse, null);
+        contexts.add(noApprovalApprovedCntx);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        List<SRV_Workflow.WorkflowContext> prospectives = SRV_WorkflowServiceUtil.identifyProspectiveAndSetDefaults(contexts);        
+        mocks.stopStubbing();
+        
+        // only Case with no status, New Status or InProgress status should have been returned
+        System.assertEquals(3, prospectives.size());
+        System.assertEquals(noStatusCase.Subject, prospectives.get(0).newRecord.Subject);
+        System.assertEquals(newCase.Subject, prospectives.get(1).newRecord.Subject);
+        System.assertEquals(inProgressCase.Subject, prospectives.get(2).newRecord.Subject);
+        
+        // statuses should have been updated to InProgress
+        System.assertEquals(null, noStatusCase.Status);
+        System.assertEquals(SRV_CaseService.NEW_STATUS, newCase.Status);
+        System.assertEquals(SRV_CaseService.IN_PROGRESS_STATUS, inProgressCase.Status);
+    }
+    
+    @isTest
+    public static void updateSystemCreatedCasesMockTest_nullInput() {
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.updateSystemCreatedCases(null);
+        mocks.stopStubbing();
+    }
+    
+    @isTest
+    public static void updateSystemCreatedCasesMockTest() {
+    	User systemUser = SRV_TestInternalUserFactory.retrieveOrCreateSystemUser();
+        List<CaseCategory__c> caseCatgoryList = new List<CaseCategory__c>();
+        
+        Id caseCategory1Id = fflib_IdGenerator.generate(CaseCategory__c.getSobjectType());
+        CaseCategory__c caseCategory1 = new CaseCategory__c(Id=caseCategory1Id);
+        caseCategory1 = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('SingleApproval_001', '0', false);
+        caseCatgoryList.add(caseCategory1);
+        
+        Id caseCategory2Id = fflib_IdGenerator.generate(CaseCategory__c.getSobjectType());
+    	CaseCategory__c caseCategory2 = new CaseCategory__c(Id=caseCategory2Id);
+        caseCategory2 = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('SingleApproval_001', '0', false);
+        caseCatgoryList.add(caseCategory2);
+        
+        // Case with status and with Non-System Owner
+        // should NOT be updated
+        Id nonSystemOwnedCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case nonSystemOwnedCase = new Case(Id=nonSystemOwnedCaseId,OwnerId = UserInfo.getUserId(),Status = SRV_CaseService.NEW_STATUS,PrimaryCaseCategory__c = caseCategory1.Id);
+
+        // Case with status and without Owner
+        // should be updated
+        Id newCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase = new Case(Id=newCaseId,OwnerId = null,Status = SRV_CaseService.NEW_STATUS,PrimaryCaseCategory__c = caseCategory1.Id);
+
+        // Case with status and with System Owner
+        // should be updated
+        Id systemOwnedCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case systemOwnedCase = new Case(Id=systemOwnedCaseId,OwnerId = systemUser.Id,Status = SRV_CaseService.NEW_STATUS,PrimaryCaseCategory__c = caseCategory1.Id);
+
+        // Case without status and without owner
+        // should be updated
+        Id noStatusCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case noStatusCase = new Case(Id=noStatusCaseId,OwnerId = null,Status = null,PrimaryCaseCategory__c = caseCategory2.Id);
+
+        User u = SRV_TestInternalUserFactory.createIntegrationUser('updateSystemCreatedCasesTest');
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        system.runAs(u) {
+            SRV_WorkflowServiceUtil.updateSystemCreatedCases(new List<Case>{nonSystemOwnedCase, newCase, systemOwnedCase, noStatusCase});            
+        }
+        mocks.stopStubbing();
+        
+        System.assertEquals(SRV_CaseService.NEW_STATUS, nonSystemOwnedCase.Status);
+        System.assertEquals(UserInfo.getUserId(), nonSystemOwnedCase.OwnerId);
+    }
+    
+    @isTest
+    public static void updateSystemCreatedCasesMockTest_nonIntegrationUser() {
+    	Id newCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase = new Case(Id=newCaseId,OwnerId = null,Status = SRV_CaseService.NEW_STATUS,PrimaryCaseCategory__c = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('SingleApproval_001', '0', true).Id);
+    	// creating user that is not integration user
+        // it means that method logic should not update anything
+        User u = SRV_TestInternalUserFactory.createInternalUser(1,1,'updateSystemCreatedCasesTest').get(0);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+		system.runAs(u) {
+            SRV_WorkflowServiceUtil.updateSystemCreatedCases(new List<Case>{newCase});
+        }        
+        mocks.stopStubbing();
+        
+        // values of original Case should not have been update because
+        // the method was run under Non-Integration user
+        System.assertEquals(SRV_CaseService.NEW_STATUS, newCase.Status);
+        System.assertEquals(null, newCase.OwnerId);
+    }
+    
+    @isTest
+    public static void updateSystemCreatedCasesMockTest_caseWithoutCategory() {
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+
+        Id ccId = fflib_IdGenerator.generate(CaseCategory__c.getSobjectType());
+        CaseCategory__c caseCat = new CaseCategory__c(Id=ccId);
+        
+        Id newCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase = new Case(Id=newCaseId,OwnerId = null,Status = SRV_CaseService.NEW_STATUS,PrimaryCaseCategory__c = caseCat.Id);
+        List <case> caseList=New List <Case>();
+        caseList.add(newCase);
+        ID userId = fflib_IdGenerator.generate(User.getSobjectType());
+        User u = SRV_TestInternalUserFactory.createIntegrationUser('updateSystemCreatedCasesTest');
+        u.alias = 'dimule1';
+        List<User> userList = new List<User>();
+        userList.add(u);
+        
+        SRV_UserSelector userMock = (SRV_UserSelector) mocks.mock(SRV_UserSelector.class);
+        Set<Id> userIdSet = new Set<Id>{u.Id};
+        
+        SRV_CaseCategorySelector ccselector = (SRV_CaseCategorySelector) mocks.mock(SRV_CaseCategorySelector.class);
+        Set<Id> ccIdSet = new Set<Id>();
+        ccIdSet.add(ccId);
+        List<CaseCategory__c> ccList = new List<CaseCategory__c>{caseCat};
+            
+        mocks.startStubbing();
+        mocks.when(userMock.sObjectType()).thenReturn(User.SObjectType);
+        mocks.when(userMock.selectByIdAndAlias(userId,'dimule1')).thenReturn(userList);
+        mocks.when(ccselector.sObjectType()).thenReturn(CaseCategory__c.sObjectType);
+        mocks.when(ccselector.selectByIdWithSystemCreatedAssignment(ccIdSet)).thenReturn(ccList);
+        system.runAs(u) {
+            SRV_WorkflowServiceUtil.updateSystemCreatedCases(caseList);
+        }
+        mocks.stopStubbing();
+        // values of original Case should not have been update because
+        // the method was run under Non-Integration user
+        System.assertEquals(SRV_CaseService.NEW_STATUS, newCase.Status);
+        System.assertEquals(null, newCase.OwnerId);
+    }
+    
+    @isTest
+    public static void cleanWorkflowTriggerFieldsMockTest_NullInput(){
+        List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.cleanWorkflowTriggerFields(contexts);
+        mocks.stopStubbing();
+    }
+    
+    @isTest
+    public static void cleanWorkflowTriggerFieldsMockTest(){
+		Id cseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case myCase = new Case(Id=cseId);
+        SRV_Workflow.WorkflowContext contexts = new SRV_Workflow.WorkflowContext(new Case(), myCase, null);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.cleanWorkflowTriggerFields(contexts);
+        mocks.stopStubbing();
+    }
+    
+    @isTest
+    public static void applyChangesAndCloseMockTest(){
+        Id systemUserId = fflib_IdGenerator.generate(User.getSobjectType());
+        Id newCaseId1 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase1 = new Case(Id=newCaseId1,ReadOnlyStatus__c = 'read',OwnerId=systemUserId,Status = SRV_CaseService.APPROVED_SYSTEM_ERROR_STATUS);
+              
+        SRV_Workflow.WorkflowContext APPROVED_BUT_ERROR_STATUSCntx = new SRV_Workflow.WorkflowContext(new Case(), newCase1, null);
+        
+        Id newCaseId2 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase2 = new Case(Id=newCaseId2,ReadOnlyStatus__c = 'read',OwnerId=systemUserId,Status = SRV_CaseService.DENIED_SYSTEM_ERROR_STATUS);
+        
+        SRV_Workflow.WorkflowContext DENIED_SYSTEM_ERROR_STATUSCntx = new SRV_Workflow.WorkflowContext(new Case(), newCase2, null);
+		        
+        Id newCaseId3 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase3 = new Case(Id=newCaseId3,ReadOnlyStatus__c = 'read',OwnerId=systemUserId,Status = SRV_CaseService.SYSTEM_PROCESSING_STATUS);
+        
+        SRV_Workflow.WorkflowContext SYSTEM_PROCESSING_STATUSCntx = new SRV_Workflow.WorkflowContext(new Case(), newCase3, null);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.applyChangesAndClose(APPROVED_BUT_ERROR_STATUSCntx);
+        SRV_WorkflowServiceUtil.applyChangesAndClose(DENIED_SYSTEM_ERROR_STATUSCntx);
+        SRV_WorkflowServiceUtil.applyChangesAndClose(SYSTEM_PROCESSING_STATUSCntx);
+        mocks.stopStubbing();
+    }
+    
+    @isTest
+    public static void applyCloseMockTest(){
+        Id systemUserId = fflib_IdGenerator.generate(User.getSobjectType());
+        Id newCaseId1 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase1 = new Case(Id=newCaseId1,ReadOnlyStatus__c = 'read',OwnerId=systemUserId,Status=SRV_CaseService.APPROVED_AND_PENDING_ACTION_STATUS);
+        
+        SRV_Workflow.WorkflowContext APPROVED_AND_PENDING_ACTION_STATUSCntx = new SRV_Workflow.WorkflowContext(new Case(), newCase1, null);
+
+        Id newCaseId2 = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase2 = new Case(Id=newCaseId2,ReadOnlyStatus__c = 'read',OwnerId=systemUserId,Status=SRV_CaseService.DENIED_AND_PENDING_ACTION_STATUS);
+        
+        SRV_Workflow.WorkflowContext DENIED_AND_PENDING_ACTION_STATUSCntx = new SRV_Workflow.WorkflowContext(new Case(), newCase2, null);
+        
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.applyClose(APPROVED_AND_PENDING_ACTION_STATUSCntx);
+        SRV_WorkflowServiceUtil.applyClose(DENIED_AND_PENDING_ACTION_STATUSCntx);
+        mocks.stopStubbing();
+    }
+    
+    @isTest
+    public static void updateDynamicWorkflowConfigurationMockTest_emptyInputs() {
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.updateDynamicWorkflowConfiguration(null, null);
+        mocks.stopStubbing();
+    }
+    
+   @isTest
+    // method updateDynamicWorkflowConfiguration is tested here via update trigger call
+    public static void updateDynamicWorkflowConfigurationMockTest() {
+		Id ccId = fflib_IdGenerator.generate(CaseCategory__c.getSobjectType());
+        CaseCategory__c cc = new CaseCategory__c(Id=ccId);
+        cc = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('Dynamic_VariableApproval_PAD_SC_001', '0', true);
+        
+        Id newCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase = new Case(Id=newCaseId,Origin = 'Inbound - E-mail',PrimaryCaseCategory__c = cc.Id,Subject = 'Test Case',Workflow__c='SingleApproval_001');
+        
+        Case createdCase = new Case(Id=newCaseId,Origin = 'Inbound - E-mail',Subject = 'Test Case',PrimaryCaseCategory__c = cc.Id,Workflow__c='SingleApproval_001');
+        
+        // check, that Case Category stamping happened already during Case Creation
+        system.assertEquals('SingleApproval_001', createdCase.Workflow__c);
+        
+        // changing the Case Category and then updating the Case
+        // as the Case Category has been already stamped before, it should not be restamped
+        cc.Workflow__c = 'Dynamic_ForkedApproval_SC_ITS_001';
+        
+        // updating Case just to fire Case trigger
+        newCase.Subject = 'Just updating something';
+    
+        Case updatedCase = new Case(Id=newCaseId,Origin = 'Inbound - E-mail',Subject = 'Test Case',PrimaryCaseCategory__c = cc.Id,Workflow__c='SingleApproval_001');
+        system.assertEquals('SingleApproval_001', updatedCase.Workflow__c);
+    }
+    
+    @isTest
+    public static void updateDynamicWorkflowConfigurationMockTest_missingOriginalRecords()
+    {
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        
+        Id ccId = fflib_IdGenerator.generate(CaseCategory__c.getSobjectType());
+        CaseCategory__c cc = new CaseCategory__c(Id=ccId);
+        cc = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('Dynamic_VariableApproval_PAD_SC_001', '0', true);
+        
+        Id ccId2 = fflib_IdGenerator.generate(CaseCategory__c.getSobjectType());
+        CaseCategory__c cc2 = new CaseCategory__c(Id=ccId2);
+        cc2 = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('Dynamic_VariableApproval_PAD_SC_001', '0', true);
+
+        Id newCaseId = fflib_IdGenerator.generate(Case.getSobjectType());
+        Case newCase = new Case(Id = newCaseId, Origin = 'Inbound - E-mail');
+        newCase.PrimaryCaseCategory__c = cc.Id;
+        
+        Case newCase2 = new Case(Id = newCaseId, Origin = 'Inbound - E-mail');
+        newCase2.PrimaryCaseCategory__c = cc2.Id;
+        
+        system.debug('newCase--->' + newCase);
+        
+        Map<Id, Case> csMap = new Map<Id, Case>();
+        csMap.put(newCaseId,newCase);
+        
+        mocks.startStubbing();
+        SRV_WorkflowServiceUtil.updateDynamicWorkflowConfiguration(csMap, new List<Case>{newCase2});
+        mocks.stopStubbing();
+        newCase2.PrimaryCaseCategory__c = null;
+        SRV_WorkflowServiceUtil.updateDynamicWorkflowConfiguration(csMap, new List<Case>{newCase2});
+    }
+}

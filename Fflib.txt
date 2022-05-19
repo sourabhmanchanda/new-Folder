@@ -1,0 +1,124 @@
+
+
+########################  fflib_SObjectSelector  ##########################33
+
+1)  fflib_SObjectSelector  make building and executing SOQL queries easier, more consistent, secure
+
+2) The next step we need to do is to extend the class fflib_SObjectSelector. This will allow us to define the current as a 
+selector and to also inherit a lot of functionality specific to this layer. When we extend the super class we also have to 
+add two mandatory methods; one for indicating which sObject the selector is for and the other being which fields should be 
+selected from current sObject.
+
+3) What is Apex Mocks?
+
+Apex Mocks is unit test mocking framework for Apex that was inspired by the very popular Java Mockito framework. 
+The Apex Mocks framework is also built using Salesforce’s Stub API which is a good thing,
+
+
+*  Tell ApexMocks framework you are about to start stubbing using when() calls.
+	 */
+	public void startStubbing()
+	{
+		methodReturnValueRecorder.Stubbing = true;
+	}
+
+	/**
+	 * Tell ApexMocks framework you are about to stop stubbing using when() calls.
+	 */
+	public void stopStubbing()
+	{
+		methodReturnValueRecorder.Stubbing = false;
+	}
+	
+4) What is Stubbing and how to Stub
+
+Creating fake return result from the method is called stubbing . 
+
+Basically it's the act of providing fake return responses for a mocked class's methods and it's super extra important when 
+setting up your unit tests because without them, well frankly nothing is gonna work
+
+5) 
+public class AccountsSelector extends fflib_SObjectSelector {
+    
+      public List<Schema.SObjectField> getSObjectFieldList(){
+      return new List<Schema.SObjectField> {
+         Account.Id,
+		 Account.Description,
+         Account.Name,
+         Account.AnnualRevenue
+      };
+   }
+    
+   public Schema.SObjectType getSObjectType(){
+      return Account.sObjectType;
+   }
+ 
+    public List<Account> selectById(Set<Id> recordIds){
+        System.debug((List<Account>) selectSObjectsById(recordIds));
+      	return (List<Account>) selectSObjectsById(recordIds);
+	}
+   
+    public List<Account> customFunctionSelectById(Set<Id> recordIds, List<String> fieldsList){
+	
+        System.debug(Database.query(
+            newQueryFactory()
+                .selectFields(fieldsList)
+                .setCondition('Id IN :recordIds')
+                .toSOQL()));
+        
+        return Database.query(
+            newQueryFactory()
+                .selectFields(fieldsList)
+                .setCondition('Id IN :recordIds')
+                .toSOQL());
+		//return (List<Account>) selectSObjectsById(recordIds);        
+    }
+}
+
+6) 
+@isTest
+private class AccountsSelectorTest {
+    @isTest
+    private static void customFunctionSelectById(){
+        // Create Mocks
+        //Creating the mock/fake version of our Account selector class
+        fflib_ApexMocks mocks = new fflib_ApexMocks();
+        AccountsSelector accSelectorMock = (AccountsSelector) mocks.mock(AccountsSelector.class);
+        // Given
+        List<Account> accountsMock = new List<Account>();
+        List<String> fieldsList = new List<String>{'Country__c'};
+        Id accId = fflib_IDGenerator.generate(Account.SObjectType);
+        accountsMock.add(
+                new Account(
+                        Id = accId,
+                        Name = 'TestName',
+                        Description = 'description',
+                    	AnnualRevenue = 1000.0
+                )
+        );
+ // Tell ApexMocks framework you are about to start stubbing using when() calls.
+ //Here is where we start stubbing our fake return values from our methods that will be called by the actual class we are testing.
+//You need to initialize our mock stubbing by using the mocks.startStubbing method.
+       mocks.startStubbing();
+            mocks.when(accSelectorMock.sObjectType())
+                .thenReturn(Account.SObjectType);
+            mocks.when(accSelectorMock.selectById(new Set<Id>{ accId }))
+                .thenReturn(accountsMock); 
+       	   // mocks.when(accSelectorMock.customFunctionSelectById(new Set<Id>{ accId }, new List<String>{'Country__c'})
+           //    .thenReturn(accountsMock); 
+        mocks.stopStubbing();
+ 		// Tell ApexMocks framework you are about to stop stubbing using when() calls. 
+ 		// //Make sure to do your stubbing before sending your mock class to your application factory class!!!
+		// Application.selector.setMock(mockAccountSelector);
+ 		Test.startTest();        
+        AccountsSelector ac = new AccountsSelector();
+        ac.selectById(new Set<Id>{ accId });
+        ac.customFunctionSelectById(new Set<Id>{ accId }, fieldsList);
+        Test.stopTest();
+        System.assertEquals('TestName', accountsMock[0].Name, '');
+    }
+
+}
+
+
+

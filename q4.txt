@@ -1,0 +1,105 @@
+HTML
+<template>
+    <div class="slds-form-element buttons slds-text-align_center">
+        <lightning-button variant="brand"
+        label="Change Close Date LWC"
+        title="popupbutton"
+        onclick={openModal}
+        class="slds-m-left_x-small">
+        </lightning-button>
+    </div>
+    <!--Use template if:true to display/hide popup based on isModalOpen value-->
+    <template if:true={isModalOpen}>
+        <!-- Modal/Popup Box LWC starts here -->
+        <section role="dialog" tabindex="-1" aria-labelledby="modal-heading-01" aria-modal="true" aria-describedby="modal-content-id-1" class="slds-modal slds-fade-in-open">
+            <div class="slds-modal__container">
+                <!-- Modal/Popup Box LWC header here -->
+                <header class="slds-modal__header">
+                    <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse" title="Close" onclick={closeModal}>
+                        <lightning-icon icon-name="utility:close"
+                            alternative-text="close"
+                            variant="inverse"
+                            size="small" ></lightning-icon>
+                        <span class="slds-assistive-text">Close</span>
+                    </button>
+                    <h2 id="modal-heading-01" class="slds-text-heading_medium slds-hyphenate">Opportunity Close Date</h2>
+                </header>
+                <!-- Modal/Popup Box LWC body starts here -->
+                <div class="slds-modal__content slds-p-around_medium" id="modal-content-id-1">
+                    <p><lightning-input name="input1" onchange={handleChange} type="date" value={cdate} label="Select a Date to change Opportunity Close Date." placeholder="Fill a date..." required></lightning-input></p>
+                </div>
+                <!-- Modal/Popup Box LWC footer starts here -->
+                <footer class="slds-modal__footer">
+                    <button class="slds-button slds-button_neutral" onclick={closeModal} title="Cancel">Cancel</button>
+                    <button class="slds-button slds-button_brand" onclick={submitDetails} title="OK">OK</button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open"></div>
+    </template>
+</template>
+
+JS
+import { LightningElement, track, api } from 'lwc';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+import updateOpportunity from '@salesforce/apex/lwc4controller.changeOpDate';
+import getOpportunity from '@salesforce/apex/lwc4controller.getCloseDate';
+ 
+ 
+export default class Lwc4 extends LightningElement {
+    @api recordId;
+    @track isModalOpen = false;
+    @track cdate;
+ 
+    connectedCallback() {
+        getOpportunity({opId: this.recordId}).then(result => {
+            this.cdate = result;
+            console.log(this.cdate);
+        })
+       
+    }
+    handleChange(event) {
+        this.cdate = event.target.value;
+    }
+ 
+    openModal() {
+        // to open modal set isModalOpen tarck value as true
+        this.isModalOpen = true;
+    }
+    closeModal() {
+        // to close modal set isModalOpen tarck value as false
+        this.isModalOpen = false;
+    }
+    submitDetails() {
+        // to close modal set isModalOpen tarck value as false
+        //Add your code to call apex method or do some processing
+        console.log(this.cdate+ ''+this.recordId);
+        updateOpportunity({opId: this.recordId, cd: this.cdate}).then(result => {
+                alert('succefully updated opportunity');
+        })
+        this.isModalOpen = false;
+       
+    }
+}
+
+ApexClass
+public with sharing class lwc4controller {
+    @AuraEnabled
+    public static Date getCloseDate(String opId){
+        return [SELECT Id,CloseDate FROM Opportunity WHERE Id  = :opId].CloseDate;
+    }
+ 
+    @AuraEnabled
+    public static void changeOpDate(String opId, Date cd){
+        try {
+            Opportunity op = [SELECT Id,CloseDate FROM Opportunity WHERE Id  = :opId];
+            op.CloseDate = cd;
+            System.debug(op + ' '+cd);
+            update op;
+            return true;
+        } catch (Exception e) {
+            throw new AuraHandledException(e.getMessage());
+        }
+    }
+   
+}

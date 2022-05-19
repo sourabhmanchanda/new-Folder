@@ -1,0 +1,623 @@
+@isTest
+public class SRV_WorkflowServiceUtilTest {
+    
+    @isTest
+    public static void refreshFromSnapShotTest() {
+        
+        Case c = new Case();
+        insert c;
+        
+        c.TicketId__c = 'ticketId';
+        c.Status = '1';
+        c.Action__c = 'action';
+        c.OwnerId = UserInfo.getUserId();
+        c.Workflow__c = 'workflow';
+        c.FrontOfficeResult__c = 'result';
+        
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(null, new Case(), null);
+		
+        context.snapShot = c;
+        context.newRecord = new Case();
+        
+        SRV_WorkflowServiceUtil.refreshFromSnapShot(context);
+        
+        System.assertEquals(c.Id, context.newRecord.Id);
+        System.assertEquals(c.TicketId__c, context.newRecord.TicketId__c);
+        System.assertEquals(c.Status, context.newRecord.Status);
+        System.assertEquals(c.Action__c, context.newRecord.Action__c);
+        System.assertEquals(c.OwnerId, context.newRecord.OwnerId);
+        System.assertEquals(c.Workflow__c, context.newRecord.Workflow__c);
+        System.assertEquals(c.FrontOfficeResult__c, context.newRecord.FrontOfficeResult__c);
+        System.assertEquals(null, context.snapShot);
+    }
+    
+    @isTest
+    public static void enqueueForDecompressionTest_decompressionOnCreate() {
+        SRV_TestInternalUserFactory.retrieveOrCreateSystemUser();
+		
+        Case c = new Case();
+        insert c;
+        
+        c.TicketId__c = 'ticketId';
+        c.Status = SRV_CaseService.NEW_STATUS;
+        c.Action__c = 'action';
+        c.OwnerId = UserInfo.getUserId();
+        c.Workflow__c = 'workflow';
+        c.FrontOfficeResult__c = 'result';
+        
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(null, c, null);
+        
+        SRV_WorkflowServiceUtil.enqueueForDecompression(context, true);
+        
+        System.assertEquals(c.Id, context.snapShot.Id);
+        System.assertEquals('ticketId', context.snapShot.TicketId__c);
+        System.assertEquals('action', context.snapShot.Action__c);
+        System.assertEquals('workflow', context.snapShot.Workflow__c);
+        System.assertEquals('result', context.snapShot.FrontOfficeResult__c);
+        System.assertEquals(UserInfo.getUserId(), context.snapShot.OwnerId);
+        System.assertEquals(SRV_CaseService.NEW_STATUS, context.snapShot.Status);
+        System.assertEquals(SRV_Workflow.CalloutType.DECOMPRESS_ON_CREATION, context.getCalloutType());
+        
+        SRV_TestWorkflowUtil.verifyDecompressionPrepared(c, true);
+    }
+	
+    @isTest
+    public static void enqueueForDecompressionTest_decompressionOnUpdate() {
+        SRV_TestInternalUserFactory.retrieveOrCreateSystemUser();
+		
+        Case c = new Case();
+        insert c;
+        
+        c.TicketId__c = 'ticketId';
+        c.Status = SRV_CaseService.NEW_STATUS;
+        c.Action__c = 'action';
+        c.OwnerId = UserInfo.getUserId();
+        c.Workflow__c = 'workflow';
+        c.FrontOfficeResult__c = 'result';
+        
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(null, c, null);
+        
+        SRV_WorkflowServiceUtil.enqueueForDecompression(context, false);
+        
+        System.assertEquals(c.Id, context.snapShot.Id);
+        System.assertEquals('ticketId', context.snapShot.TicketId__c);
+        System.assertEquals('action', context.snapShot.Action__c);
+        System.assertEquals('workflow', context.snapShot.Workflow__c);
+        System.assertEquals('result', context.snapShot.FrontOfficeResult__c);
+        System.assertEquals(UserInfo.getUserId(), context.snapShot.OwnerId);
+        System.assertEquals(SRV_CaseService.NEW_STATUS, context.snapShot.Status);
+        System.assertEquals(SRV_Workflow.CalloutType.DECOMPRESS_ON_UPDATE, context.getCalloutType());
+
+        SRV_TestWorkflowUtil.verifyDecompressionPrepared(c, true);
+    }
+    
+    @isTest
+    public static void trackActionPerformedTest_noAction() {
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(new Case(), new Case(), null);
+        SRV_WorkflowServiceUtil.trackActionPerformed(new List<SRV_Workflow.WorkflowContext>{context});
+        System.assertEquals(null, context.newRecord.PreviousUser__c);
+        System.assertEquals(null, context.newRecord.ActionPerformed__c);
+    }
+    
+    @isTest
+    public static void trackActionPerformedTest_SubmitAction() {
+        Case oldRecord = new Case();
+        Case newRecord = new Case();
+        newRecord.Action__c = SRV_CaseService.SUBMIT_FOR_APPROVAL_ACTION;
+        
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(oldRecord, newRecord, null);
+        SRV_WorkflowServiceUtil.trackActionPerformed(new List<SRV_Workflow.WorkflowContext>{context});
+        System.assertEquals(UserInfo.getUserId(), context.newRecord.PreviousUser__c);
+        System.assertEquals(newRecord.Action__c, context.newRecord.ActionPerformed__c);
+    }
+    
+    @isTest
+    public static void trackActionPerformedTest_ForwardAction() {
+        Id newAssignee = SRV_TestGroupFactory.createCaseQueue('action_track_test').Id;
+        Case oldRecord = new Case();
+        oldRecord.OwnerId = newAssignee;
+        Case newRecord = new Case();
+        newRecord.Action__c = SRV_CaseService.FORWARD_ACTION;
+        
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(oldRecord, newRecord, null);
+        SRV_WorkflowServiceUtil.trackActionPerformed(new List<SRV_Workflow.WorkflowContext>{context});
+        System.assertEquals(oldRecord.OwnerId, context.newRecord.PreviousUser__c);
+        System.assertEquals(newRecord.Action__c, context.newRecord.ActionPerformed__c);
+    }
+    
+    @isTest
+    public static void trackActionPerformedTest_ReplyAction() {
+        Id newAssignee = SRV_TestGroupFactory.createCaseQueue('action_track_test').Id;
+        Case oldRecord = new Case();
+        oldRecord.OwnerId = newAssignee;
+        Case newRecord = new Case();
+        newRecord.Action__c = SRV_CaseService.REPLY_ACTION;
+        
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(oldRecord, newRecord, null);
+        SRV_WorkflowServiceUtil.trackActionPerformed(new List<SRV_Workflow.WorkflowContext>{context});
+        System.assertEquals(oldRecord.OwnerId, context.newRecord.PreviousUser__c);
+        System.assertEquals(newRecord.Action__c, context.newRecord.ActionPerformed__c);
+    }
+    
+    @isTest
+    public static void enqueueForFOProcessingTest() {
+        SRV_TestInternalUserFactory.retrieveOrCreateSystemUser();
+        
+        SRV_Workflow.WorkflowContext context = new SRV_Workflow.WorkflowContext(new Case(), new Case(), null);
+        SRV_WorkflowServiceUtil.enqueueForFOProcessing(context, SRV_CaseService.APPROVED_AND_PROCESSING_STATUS);
+        
+        SRV_TestWorkflowUtil.verifyDynamicFOCallPrepared(context.newRecord, SRV_CaseService.APPROVED_AND_PROCESSING_STATUS, true);
+        
+        System.assertEquals(SRV_Workflow.CalloutType.FRONT_OFFICE_DATA_FORWARD, context.getCalloutType());
+    }
+    
+    @isTest
+    public static void stampDynamicWorkflowConfigurationTest_dynamicWorkflowCase() {
+        
+        CaseCategory__c cc = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('Dynamic_ForkedApproval_SC_ITS_001', '0', false);
+        List<Group> queues = SRV_TestGroupFactory.createCaseQueues(1, 8, 'stampingUnitTest');
+        cc.AlternativeAssigneeDefaultId_t__c = queues[0].Id;
+        cc.AlternativeAssignee1Id_t__c = queues[1].Id;
+        cc.AlternativeAssignee2Id_t__c = queues[2].Id;
+        cc.AlternativeAssignee3Id_t__c = queues[3].Id;
+        cc.AlternativeAssignee4Id_t__c = queues[4].Id;
+        cc.AlternativeAssignee5Id_t__c = queues[5].Id;
+        cc.AlternativeAssignee4Id_t__c = queues[4].Id;
+        cc.AlternativeAssignee5Id_t__c = queues[5].Id;
+
+        insert cc;
+        
+        Case newCase = SRV_TestCaseFactory.createCase(false);
+        newCase.PrimaryCaseCategory__c = cc.Id;
+		
+        SRV_WorkflowServiceUtil.stampDynamicWorkflowConfiguration(new List<Case>{newCase});
+		
+        System.assertEquals(cc.Workflow__c, newCase.Workflow__c);
+        System.assertEquals(cc.FirstLevelApproverId__c, newCase.FirstLevelApproverId__c);
+        System.assertEquals(cc.SecondLevelApproverId__c, newCase.SecondLevelApproverId__c);
+        System.assertEquals(cc.ThirdLevelApproverId__c, newCase.ThirdLevelApproverId__c);
+        System.assertEquals(cc.ErrorAssignmentId__c, newCase.ErrorAssignmentId__c);
+        System.assertEquals(cc.PendingActionsAssignmentId__c, newCase.PendingActionsAssignmentId__c);
+        System.assertEquals(cc.AlternativeAssigneeDefaultId_t__c, newCase.AlternativeAssigneeDefaultId_t__c);
+        System.assertEquals(cc.AlternativeAssignee1Id_t__c, newCase.AlternativeAssignee1Id_t__c);
+        System.assertEquals(cc.AlternativeAssignee2Id_t__c, newCase.AlternativeAssignee2Id_t__c);
+        System.assertEquals(cc.AlternativeAssignee3Id_t__c, newCase.AlternativeAssignee3Id_t__c);
+    }
+    
+    @isTest
+    public static void stampDynamicWorkflowConfigurationTest_noWorkflowCaseCategory() {
+        
+        CaseCategory__c cc = SRV_TestCaseCategoryFactory.generateCaseCategories(1, false).get(0);
+        cc.Workflow__c = null;
+        insert cc;
+        
+        Case newCase = SRV_TestCaseFactory.createCase(false);
+        newCase.PrimaryCaseCategory__c = cc.Id;
+		
+        // just testing that method does not fail, when no workflow is assigned to the
+        // Case Category
+        SRV_WorkflowServiceUtil.stampDynamicWorkflowConfiguration(new List<Case>{newCase});
+    }
+    
+    @isTest
+    public static void stampDynamicWorkflowConfigurationTest_noCaseCategory() {
+        
+        Case newCase = SRV_TestCaseFactory.createCase(true);
+        
+        // just testing that method does not fail, when no Case Category is assigned to Case
+        SRV_WorkflowServiceUtil.stampDynamicWorkflowConfiguration(new List<Case>{newCase});
+    }
+    
+    @isTest
+    public static void stampDynamicWorkflowConfigurationTest_emptyInputs() {
+        
+        SRV_WorkflowServiceUtil.stampDynamicWorkflowConfiguration(new List<Case>());
+        SRV_WorkflowServiceUtil.stampDynamicWorkflowConfiguration(null);		
+    }
+    
+    @isTest
+    // method updateDynamicWorkflowConfiguration is tested here via update trigger call
+    public static void updateDynamicWorkflowConfigurationTest() {
+        
+        Case newCase = new Case();
+        newCase.Origin = 'Inbound - E-mail';
+        newCase.Subject = 'Test Case';
+        insert newCase;
+        
+        Case createdCase = [SELECT Id, Workflow__c from Case where Id = :newCase.Id LIMIT 1];
+        
+        // precheck, that no stamping was done yet
+        system.assertEquals(null, createdCase.Workflow__c);
+        
+        CaseCategory__c cc = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('Dynamic_VariableApproval_PAD_SC_001', '0', true);
+        
+        createdCase.PrimaryCaseCategory__c = cc.Id;
+        update createdCase;
+        
+        Case updatedCase = [SELECT Id, Workflow__c from Case where Id = :newCase.Id LIMIT 1];
+        system.assertEquals('Dynamic_VariableApproval_PAD_SC_001', updatedCase.Workflow__c);
+    }
+    
+    @isTest
+    // method updateDynamicWorkflowConfiguration is tested here via update trigger call
+    public static void updateDynamicWorkflowConfigurationTest_CategoryRecordUpdate() {
+        
+        CaseCategory__c cc = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('Dynamic_VariableApproval_PAD_SC_001', '0', true);
+        
+        Case newCase = new Case();
+        newCase.Origin = 'Inbound - E-mail';
+        newCase.PrimaryCaseCategory__c = cc.Id;
+        insert newCase;
+        
+        Case createdCase = [SELECT Id, Workflow__c from Case where Id = :newCase.Id LIMIT 1];
+        
+        // check, that Case Category stamping happened already during Case Creation
+        system.assertEquals('Dynamic_VariableApproval_PAD_SC_001', createdCase.Workflow__c);
+        
+        // changing the Case Category and then updating the Case
+        // as the Case Category has been already stamped before, it should not be restamped
+        cc.Workflow__c = 'Dynamic_ForkedApproval_SC_ITS_001';
+        update cc;
+        
+        // updating Case just to fire Case trigger
+        newCase.Subject = 'Just updating something';
+        update newCase;
+        
+        // even though Case Category was update
+        // it should not have been restamped
+        // it would break Case Category versioning
+        Case updatedCase = [SELECT Id, Workflow__c from Case where Id = :newCase.Id LIMIT 1];
+        system.assertEquals('Dynamic_VariableApproval_PAD_SC_001', updatedCase.Workflow__c);
+    }
+    
+    @isTest
+    public static void updateDynamicWorkflowConfigurationTest_missingOriginalRecords() {
+        
+        Case newCase = new Case();
+        newCase.Origin = 'Inbound - E-mail';
+        insert newCase;
+        
+        CaseCategory__c cc = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('Dynamic_VariableApproval_PAD_SC_001', '0', true);
+        newCase.PrimaryCaseCategory__c = cc.Id;
+        
+        // test that method does not stamp or fail with exception, if original Case record is missing
+        SRV_WorkflowServiceUtil.updateDynamicWorkflowConfiguration(new Map<Id, Case>(), new List<Case>{newCase});
+        
+        system.assertEquals(null, newCase.Workflow__c);
+    }
+    
+    @isTest
+    public static void updateDynamicWorkflowConfigurationTest_emptyInputs() {
+        SRV_WorkflowServiceUtil.updateDynamicWorkflowConfiguration(null, null);
+    }
+    
+    @isTest
+    public static void setCustomFormReadOnlyByStatusTest_readOnlyStatuses() {
+        
+        List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        
+        Case pendingApprovalCse = new Case(Status = SRV_CaseService.PENDING_APPROVAL_STATUS);
+        SRV_Workflow.WorkflowContext pendingApprovalCntx = new SRV_Workflow.WorkflowContext(new Case(), pendingApprovalCse, null);
+        contexts.add(pendingApprovalCntx);
+        
+        Case pendingFirstApprovalCse = new Case(Status = SRV_CaseService.PENDING_FIRST_APPROVAL_STATUS);
+        SRV_Workflow.WorkflowContext pendingFirstApprovalCntx = new SRV_Workflow.WorkflowContext(new Case(), pendingFirstApprovalCse, null);
+        contexts.add(pendingFirstApprovalCntx);
+        
+        Case pendingSecondApprovalCse = new Case(Status = SRV_CaseService.PENDING_SECOND_APPROVAL_STATUS);
+        SRV_Workflow.WorkflowContext pendingSecondApprovalCntx = new SRV_Workflow.WorkflowContext(new Case(), pendingSecondApprovalCse, null);
+        contexts.add(pendingSecondApprovalCntx);
+        
+        Case pendingThirdApprovalCse = new Case(Status = SRV_CaseService.PENDING_THIRD_APPROVAL_STATUS);
+        SRV_Workflow.WorkflowContext pendingThirdApprovalCntx = new SRV_Workflow.WorkflowContext(new Case(), pendingThirdApprovalCse, null);
+        contexts.add(pendingThirdApprovalCntx);
+        
+        Case approvedSystemErrorCse = new Case(Status = SRV_CaseService.APPROVED_SYSTEM_ERROR_STATUS);
+        SRV_Workflow.WorkflowContext approvedSystemErrorCntx = new SRV_Workflow.WorkflowContext(new Case(), approvedSystemErrorCse, null);
+        contexts.add(approvedSystemErrorCntx);
+        
+        Case approvedButErrorCse = new Case(Status = SRV_CaseService.APPROVED_BUT_ERROR_STATUS);
+        SRV_Workflow.WorkflowContext approvedButErrorCntx = new SRV_Workflow.WorkflowContext(new Case(), approvedButErrorCse, null);
+        contexts.add(approvedButErrorCntx);
+        
+        Case approvedAndProcessingCse = new Case(Status = SRV_CaseService.APPROVED_AND_PROCESSING_STATUS);
+        SRV_Workflow.WorkflowContext approvedAndProcessingCntx = new SRV_Workflow.WorkflowContext(new Case(), approvedAndProcessingCse, null);
+        contexts.add(approvedAndProcessingCntx);
+        
+        Case approvedAndPendingActionCse = new Case(Status = SRV_CaseService.APPROVED_AND_PENDING_ACTION_STATUS);
+        SRV_Workflow.WorkflowContext approvedAndPendingActionCntx = new SRV_Workflow.WorkflowContext(new Case(), approvedAndPendingActionCse, null);
+        contexts.add(approvedAndPendingActionCntx);
+        
+        Case approvedCse = new Case(Status = SRV_CaseService.APPROVED_STATUS);
+        SRV_Workflow.WorkflowContext approvedCntx = new SRV_Workflow.WorkflowContext(new Case(), approvedCse, null);
+        contexts.add(approvedCntx);
+        
+        Case deniedAndProcessingCse = new Case(Status = SRV_CaseService.DENIED_AND_PROCESSING_STATUS);
+        SRV_Workflow.WorkflowContext deniedAndProcessingCntx = new SRV_Workflow.WorkflowContext(new Case(), deniedAndProcessingCse, null);
+        contexts.add(deniedAndProcessingCntx);
+        
+        Case deniedSystemErrorCse = new Case(Status = SRV_CaseService.DENIED_SYSTEM_ERROR_STATUS);
+        SRV_Workflow.WorkflowContext deniedSystemErrorCntx = new SRV_Workflow.WorkflowContext(new Case(), deniedSystemErrorCse, null);
+        contexts.add(deniedSystemErrorCntx);
+        
+        Case deniedAndPendingActionCse = new Case(Status = SRV_CaseService.DENIED_AND_PENDING_ACTION_STATUS);
+        SRV_Workflow.WorkflowContext deniedAndPendingActionCntx = new SRV_Workflow.WorkflowContext(new Case(), deniedAndPendingActionCse, null);
+        contexts.add(deniedAndPendingActionCntx);
+        
+        Case deniedCse = new Case(Status = SRV_CaseService.DENIED_STATUS);
+        SRV_Workflow.WorkflowContext deniedCntx = new SRV_Workflow.WorkflowContext(new Case(), deniedCse, null);
+        contexts.add(deniedCntx);
+        
+        Case closedCse = new Case(Status = SRV_CaseService.CLOSED_STATUS);
+        SRV_Workflow.WorkflowContext closedCntx = new SRV_Workflow.WorkflowContext(new Case(), closedCse, null);
+        contexts.add(closedCntx);
+        
+        Case voidedCse = new Case(Status = SRV_CaseService.VOIDED_STATUS);
+        SRV_Workflow.WorkflowContext voidedCntx = new SRV_Workflow.WorkflowContext(new Case(), voidedCse, null);
+        contexts.add(voidedCntx);
+        
+        Case completedCse = new Case(Status = SRV_CaseService.COMPLETED_STATUS);
+        SRV_Workflow.WorkflowContext completedCntx = new SRV_Workflow.WorkflowContext(new Case(), completedCse, null);
+        contexts.add(completedCntx);
+        
+        Case completeCse = new Case(Status = SRV_CaseService.COMPLETE_STATUS);
+        SRV_Workflow.WorkflowContext completeCntx = new SRV_Workflow.WorkflowContext(new Case(), completeCse, null);
+        contexts.add(completeCntx);
+		
+        Case systemProcessingCse = new Case(Status = SRV_CaseService.SYSTEM_PROCESSING_STATUS);
+        SRV_Workflow.WorkflowContext systemProcessingCntx = new SRV_Workflow.WorkflowContext(new Case(), systemProcessingCse, null);
+        contexts.add(systemProcessingCntx);
+        
+        Case systemErrorCse = new Case(Status = SRV_CaseService.SYSTEM_ERROR_STATUS);
+        SRV_Workflow.WorkflowContext systemErrorCntx = new SRV_Workflow.WorkflowContext(new Case(), systemErrorCse, null);
+        contexts.add(systemErrorCntx);
+        
+        Case errorCse = new Case(Status = SRV_CaseService.ERROR_STATUS);
+        SRV_Workflow.WorkflowContext errorCntx = new SRV_Workflow.WorkflowContext(new Case(), errorCse, null);
+        contexts.add(errorCntx);
+        
+        SRV_WorkflowServiceUtil.setCustomFormReadOnlyByStatus(contexts);
+        
+        for(SRV_Workflow.WorkflowContext context : contexts) {
+            System.assertEquals('read', context.newRecord.ReadOnlyStatus__c);
+        }
+    }
+    
+    @isTest
+    public static void setCustomFormReadOnlyByStatusTest_notReadOnlyStatuses() {
+        
+        List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        
+        Case newCse = new Case(Status = SRV_CaseService.NEW_STATUS);
+        SRV_Workflow.WorkflowContext newCntx = new SRV_Workflow.WorkflowContext(new Case(), newCse, null);
+        contexts.add(newCntx);
+        
+        Case inProgressCse = new Case(Status = SRV_CaseService.IN_PROGRESS_STATUS);
+        SRV_Workflow.WorkflowContext inProgressCntx = new SRV_Workflow.WorkflowContext(new Case(), inProgressCse, null);
+        contexts.add(inProgressCntx);
+        
+        SRV_WorkflowServiceUtil.setCustomFormReadOnlyByStatus(contexts);
+        
+        for(SRV_Workflow.WorkflowContext context : contexts) {
+            System.assertNotEquals('read', context.newRecord.ReadOnlyStatus__c);
+        }
+    }
+    
+    @isTest
+    public static void identifyProspectiveAndSetDefaultsTest_noApproval() {
+        
+        List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        
+        // no Status NoApproval Case
+        Case noApprovalNoStatusCase = new Case();
+ 		noApprovalNoStatusCase.Subject = 'noApprovalNoStatusCase';
+        noApprovalNoStatusCase.Workflow__c = 'aaNoApprovalaa';
+        SRV_Workflow.WorkflowContext noApprovalNoStatusCntx = new SRV_Workflow.WorkflowContext(new Case(), noApprovalNoStatusCase, null);
+        contexts.add(noApprovalNoStatusCntx);
+        
+        // New Status NoApproval Case
+        Case noApprovalNewCase = new Case();
+        noApprovalNewCase.Subject = 'noApprovalNewCase';
+        noApprovalNewCase.Status = SRV_CaseService.NEW_STATUS;
+        noApprovalNewCase.Workflow__c = 'aaNoApprovalaa';
+        SRV_Workflow.WorkflowContext noApprovalNewCntx = new SRV_Workflow.WorkflowContext(new Case(), noApprovalNewCase, null);
+        contexts.add(noApprovalNewCntx);
+        
+        // InProgress Status NoApproval Case
+        Case noApprovalInProgressCase = new Case();
+        noApprovalInProgressCase.Subject = 'noApprovalInProgressCase';
+        noApprovalInProgressCase.Status = SRV_CaseService.IN_PROGRESS_STATUS;
+        noApprovalInProgressCase.Workflow__c = 'aaNoApprovalaa';
+        SRV_Workflow.WorkflowContext noApprovalInProgressCntx = new SRV_Workflow.WorkflowContext(new Case(), noApprovalInProgressCase, null);
+        contexts.add(noApprovalInProgressCntx);
+        
+        // Denied Status NoApproval Case
+        Case noApprovalDeniedCse = new Case();
+        noApprovalDeniedCse.Subject = 'noApprovalDeniedCse';
+        noApprovalDeniedCse.Status = SRV_CaseService.DENIED_STATUS;
+        noApprovalDeniedCse.Workflow__c = 'aaNoApprovalaa';
+        SRV_Workflow.WorkflowContext noApprovalDeniedCntx = new SRV_Workflow.WorkflowContext(new Case(), noApprovalDeniedCse, null);
+        contexts.add(noApprovalDeniedCntx);
+        
+        // Approved Status NoApproval Case
+        Case noApprovalApprovedCse = new Case();
+        noApprovalApprovedCse.Status = SRV_CaseService.APPROVED_STATUS;
+        noApprovalApprovedCse.Subject = 'noApprovalApprovedCse';
+        noApprovalApprovedCse.Workflow__c = 'aaNoApprovalaa';
+        SRV_Workflow.WorkflowContext noApprovalApprovedCntx = new SRV_Workflow.WorkflowContext(new Case(), noApprovalApprovedCse, null);
+        contexts.add(noApprovalApprovedCntx);
+        
+        List<SRV_Workflow.WorkflowContext> prospectives = SRV_WorkflowServiceUtil.identifyProspectiveAndSetDefaults(contexts);
+        
+        // only Case with no status, New Status or InProgress status should have been returned
+        System.assertEquals(3, prospectives.size());
+        System.assertEquals(noApprovalNoStatusCase.Subject, prospectives.get(0).newRecord.Subject);
+        System.assertEquals(noApprovalNewCase.Subject, prospectives.get(1).newRecord.Subject);
+        System.assertEquals(noApprovalInProgressCase.Subject, prospectives.get(2).newRecord.Subject);
+        
+        // statuses should have been updated to InProgress
+        System.assertEquals(SRV_CaseService.IN_PROGRESS_STATUS, prospectives.get(0).newRecord.Status);
+        System.assertEquals(SRV_CaseService.IN_PROGRESS_STATUS, prospectives.get(1).newRecord.Status);
+        System.assertEquals(SRV_CaseService.IN_PROGRESS_STATUS, prospectives.get(2).newRecord.Status);
+    }
+	
+    @isTest
+    public static void identifyProspectiveAndSetDefaultsTest_nonNoApproval() {
+        
+        List<SRV_Workflow.WorkflowContext> contexts = new List<SRV_Workflow.WorkflowContext>();
+        
+        // no Status Case
+        Case noStatusCase = new Case();
+		noStatusCase.Subject = 'noStatusCase';
+        noStatusCase.Workflow__c = 'any';
+        SRV_Workflow.WorkflowContext noApprovalNoStatusCntx = new SRV_Workflow.WorkflowContext(new Case(), noStatusCase, null);
+        contexts.add(noApprovalNoStatusCntx);
+        
+        // New Status Case
+        Case newCase = new Case();
+		newCase.Subject = 'newCase';
+        newCase.Status = SRV_CaseService.NEW_STATUS;
+        newCase.Workflow__c = 'any';
+        SRV_Workflow.WorkflowContext noApprovalNewCntx = new SRV_Workflow.WorkflowContext(new Case(), newCase, null);
+        contexts.add(noApprovalNewCntx);
+        
+        // InProgress Status Case
+        Case inProgressCase = new Case();
+		inProgressCase.Subject = 'inProgressCase';
+        inProgressCase.Status = SRV_CaseService.IN_PROGRESS_STATUS;
+        inProgressCase.Workflow__c = 'any';
+        SRV_Workflow.WorkflowContext noApprovalInProgressCntx = new SRV_Workflow.WorkflowContext(new Case(), inProgressCase, null);
+        contexts.add(noApprovalInProgressCntx);
+        
+        // Denied Status Case
+        Case deniedCse = new Case();
+		deniedCse.Subject = 'deniedCse';
+        deniedCse.Status = SRV_CaseService.DENIED_STATUS;
+        deniedCse.Workflow__c = 'any';
+        SRV_Workflow.WorkflowContext noApprovalDeniedCntx = new SRV_Workflow.WorkflowContext(new Case(), deniedCse, null);
+        contexts.add(noApprovalDeniedCntx);
+        
+        // Approved Status Case
+        Case approvedCse = new Case();
+        approvedCse.Subject = 'approvedCse';
+        approvedCse.Status = SRV_CaseService.DENIED_STATUS;
+        approvedCse.Workflow__c = 'any';
+        SRV_Workflow.WorkflowContext noApprovalApprovedCntx = new SRV_Workflow.WorkflowContext(new Case(), approvedCse, null);
+        contexts.add(noApprovalApprovedCntx);
+        
+        List<SRV_Workflow.WorkflowContext> prospectives = SRV_WorkflowServiceUtil.identifyProspectiveAndSetDefaults(contexts);
+        
+        // only Case with no status, New Status or InProgress status should have been returned
+        System.assertEquals(3, prospectives.size());
+        System.assertEquals(noStatusCase.Subject, prospectives.get(0).newRecord.Subject);
+        System.assertEquals(newCase.Subject, prospectives.get(1).newRecord.Subject);
+        System.assertEquals(inProgressCase.Subject, prospectives.get(2).newRecord.Subject);
+        
+        // statuses should have been updated to InProgress
+        System.assertEquals(null, noStatusCase.Status);
+        System.assertEquals(SRV_CaseService.NEW_STATUS, newCase.Status);
+        System.assertEquals(SRV_CaseService.IN_PROGRESS_STATUS, inProgressCase.Status);
+    }
+    
+    @isTest
+    public static void updateSystemCreatedCasesTest_nullInput() {
+        SRV_WorkflowServiceUtil.updateSystemCreatedCases(null);
+    }
+    
+    @isTest
+    public static void updateSystemCreatedCasesTest() {
+        
+		User systemUser = SRV_TestInternalUserFactory.retrieveOrCreateSystemUser();
+        CaseCategory__c caseCategory1 = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('SingleApproval_001', '0', false);
+        CaseCategory__c caseCategory2 = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('SingleApproval_001', '0', false);
+        insert new List<CaseCategory__c>{caseCategory1,caseCategory2};
+        
+        // Case with status and with Non-System Owner
+        // should NOT be updated
+        Case nonSystemOwnedCase = new Case();
+        nonSystemOwnedCase.OwnerId = UserInfo.getUserId();
+        nonSystemOwnedCase.Status = SRV_CaseService.NEW_STATUS;
+        nonSystemOwnedCase.PrimaryCaseCategory__c = caseCategory1.Id;
+		
+        // Case with status and without Owner
+        // should be updated
+        Case newCase = new Case();
+        newCase.OwnerId = null;
+        newCase.Status = SRV_CaseService.NEW_STATUS;
+        newCase.PrimaryCaseCategory__c = caseCategory1.Id;
+        
+        // Case with status and with System Owner
+        // should be updated
+        Case systemOwnedCase = new Case();
+        systemOwnedCase.OwnerId = systemUser.Id;
+        systemOwnedCase.Status = SRV_CaseService.NEW_STATUS;
+        systemOwnedCase.PrimaryCaseCategory__c = caseCategory1.Id;
+		
+        // Case without status and without owner
+        // should be updated
+        Case noStatusCase = new Case();
+        noStatusCase.OwnerId = null;
+        noStatusCase.Status = null;
+        noStatusCase.PrimaryCaseCategory__c = caseCategory2.Id;
+		
+        User u = SRV_TestInternalUserFactory.createIntegrationUser('updateSystemCreatedCasesTest');
+        
+        system.runAs(u) {
+            SRV_WorkflowServiceUtil.updateSystemCreatedCases(new List<Case>{nonSystemOwnedCase, newCase, systemOwnedCase, noStatusCase});            
+        }
+        
+        System.assertEquals(SRV_CaseService.NEW_STATUS, nonSystemOwnedCase.Status);
+        System.assertEquals(UserInfo.getUserId(), nonSystemOwnedCase.OwnerId);
+        
+        System.assertEquals(SRV_CaseService.IN_PROGRESS_STATUS, newCase.Status);
+        System.assertEquals(caseCategory1.SystemCreatedAssignmentId_t__c, newCase.OwnerId);
+		
+        System.assertEquals(SRV_CaseService.IN_PROGRESS_STATUS, systemOwnedCase.Status);
+        System.assertEquals(caseCategory1.SystemCreatedAssignmentId_t__c, systemOwnedCase.OwnerId);
+        
+        System.assertEquals(SRV_CaseService.IN_PROGRESS_STATUS, noStatusCase.Status);
+        System.assertEquals(caseCategory2.SystemCreatedAssignmentId_t__c, noStatusCase.OwnerId);
+    }
+    
+    @isTest
+    public static void updateSystemCreatedCasesTest_nonIntegrationUser() {
+        
+        Case newCase = new Case();
+        newCase.OwnerId = null;
+        newCase.Status = SRV_CaseService.NEW_STATUS;
+        newCase.PrimaryCaseCategory__c = SRV_TestCaseCategoryFactory.generateCaseCategoryForWorkflow('SingleApproval_001', '0', true).Id;
+        
+        // creating user that is not integration user
+        // it means that method logic should not update anything
+        User u = SRV_TestInternalUserFactory.createInternalUser(1,1,'updateSystemCreatedCasesTest').get(0);
+        
+        system.runAs(u) {
+            SRV_WorkflowServiceUtil.updateSystemCreatedCases(new List<Case>{newCase});
+        }
+        
+        // values of original Case should not have been update because
+        // the method was run under Non-Integration user
+        System.assertEquals(SRV_CaseService.NEW_STATUS, newCase.Status);
+        System.assertEquals(null, newCase.OwnerId);
+    }
+    
+    @isTest
+    public static void updateSystemCreatedCasesTest_caseWithoutCategory() {
+        
+        Case newCase = new Case();
+        newCase.OwnerId = null;
+        newCase.Status = SRV_CaseService.NEW_STATUS;
+        newCase.PrimaryCaseCategory__c = null;
+        
+        User u = SRV_TestInternalUserFactory.createIntegrationUser('updateSystemCreatedCasesTest');
+        
+        system.runAs(u) {
+            SRV_WorkflowServiceUtil.updateSystemCreatedCases(new List<Case>{newCase});
+        }
+        
+        // values of original Case should not have been update because
+        // the method was run under Non-Integration user
+        System.assertEquals(SRV_CaseService.NEW_STATUS, newCase.Status);
+        System.assertEquals(null, newCase.OwnerId);
+    }
+}

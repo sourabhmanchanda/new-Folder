@@ -1,0 +1,354 @@
+<template>
+
+    <lightning-card title="">
+        <div class="slds-text-heading_large">All Object List</div>
+        <div class="slds-text-heading_medium">And List Of Records.</div></br></br>
+
+        <div class="slds-grid slds-gutters">
+            <div class="slds-col">
+              <span>
+                All Objects: 
+                <select class="slds-select" onchange={showFields}>
+                    <option>Select an Object</option>
+                    <template for:each ={objects} for:item="item">
+                        <option key={item.Id} value={item.value}>{item.key}</option>
+                    </template>
+                </select>
+              </span>
+            </div>
+            <div class="slds-col">
+              <span>
+                <lightning-input 
+                  type="search" 
+                  onchange={handleKeyChange} 
+                  class="slds-m-bottom_small"           
+                  label="Search" 
+                  value={searchKey}>
+                </lightning-input>
+              </span>
+            </div>
+            <div class="slds-col">
+              <span>
+                Record you want to show:
+                <select class="slds-select" id="select-01" onchange={onSelectChange}>
+                    <option value="">Choose one…</option>
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                    <option value="30">30</option>
+                  </select>
+              </span>
+            </div>
+            <div class="slds-col">
+              <span>
+                <template if:true={isModalOpen}>
+                    <!-- Modal/Popup Box LWC starts here -->
+                    <section role="dialog" tabindex="-1" aria-labelledby="modal-heading-01" aria-modal="true" aria-describedby="modal-content-id-1" class="slds-modal slds-fade-in-open">
+                        <div class="slds-modal__container">
+                            <!-- Modal/Popup Box LWC header here -->
+                            <header class="slds-modal__header">
+                                <lightning-dual-listbox name="Select Fields to display"
+                                    label="Select Fields to display"
+                                    source-label="Available"
+                                    selected-label="Selected"
+                                    field-level-help="Select fields which you want display in the list view"
+                                    options={fields}
+                                    value ={values}
+                                    required-options={requiredOptions}
+                                    onchange={handleSelectFieldToDisplay}>
+                                </lightning-dual-listbox>
+                            </header>
+                            <!-- Modal/Popup Box LWC footer starts here -->
+                            <footer class="slds-modal__footer">
+                                <button class="slds-button slds-button_neutral" onclick={closeModal} title="Cancel">Cancel</button>
+                                <button class="slds-button slds-button_brand" onclick={submitDetails} title="OK">OK</button>
+                            </footer>
+                        </div>
+                    </section>
+                    <div class="slds-backdrop slds-backdrop_open"></div>
+                </template>
+                <lightning-button variant="brand" label="select fields" title="Primary action" onclick={openModal} class="slds-m-left_x-small"></lightning-button>
+              </span>
+            </div>
+          </div>
+
+          <div style="height: 300px;">
+            <lightning-datatable
+                    key-field="id"
+                    data={data}
+                    columns={columns}>
+            </lightning-datatable>
+        </div>  
+    </lightning-card>
+     
+
+    <div class="slds-grid">
+      <div class="slds-col">
+        <span></span>
+      </div>
+      <div class="slds-col">
+        <span></span>
+      </div>
+      <div class="slds-col">
+        <span>
+          <div class=".slds-float_right">
+            <lightning-button variant="brand" label="First"  onclick={first} class="slds-m-left_x-small"></lightning-button>
+            <lightning-button variant="brand" label="Previous" onclick={previous} class="slds-m-left_x-small"></lightning-button>
+            <lightning-button variant="brand" label="Next"  onclick={next} class="slds-m-left_x-small"></lightning-button>
+            <lightning-button variant="brand" label="Last" onclick={last} class="slds-m-left_x-small"></lightning-button>
+          </div>
+        </span>
+      </div>
+    </div>
+
+</template>
+
+
+
+
+
+
+import { LightningElement, api,track, wire} from 'lwc';
+import getAllObject from '@salesforce/apex/ObjectWithFields.getAllObject';
+import getAllfields from '@salesforce/apex/ObjectWithFields.getAllfields';
+import objectRecords from '@salesforce/apex/ObjectWithFieldsAndRecordsCtrl.objectRecords';
+
+export default class DynamicDatatable extends LightningElement {
+
+    @track objects = [];
+    @track fields=[];
+    @track values = [];
+    @track columns = [];
+    @track selectedObj;
+    @track selectedflds=[];
+    @track value;
+    @api searchKey = '';
+    @track isModalOpen = false;
+    @track data;
+    @track allRecords;
+    // @track objectList;
+    // @track paginationList;
+    pageSize = 10;
+    dafaultPageSize=5;
+    totalSize;
+    start;
+    end;
+
+    connectedCallback(){
+        getAllObject()
+            .then(result => {
+                for(let key in result) {
+                    if (result.hasOwnProperty(key)) {
+                        this.objects.push({value:result[key], key:key});
+                    }
+                }
+            })
+            .catch(error => {
+                this.error = error;
+            });
+    }
+
+    showFields(event){
+        this.columns=[];
+        this.selectedObj = event.target.value;
+        //console.log(this.selectedObj);
+        getAllfields({objectName : this.selectedObj})
+        .then(result => {
+            this.fields = [];
+            this.values = [];
+            for(let key in result) {
+                if (result.hasOwnProperty(key)) {
+                    this.fields.push({label:result[key],value:key});
+                }
+                if(key=='Id'){  
+                    this.values.push(key);
+                    console.log('values---> ', this.values);
+                }
+            }
+            //console.log(this.fields);
+            //console.log('feilds length',this.fields.length);
+        })
+        .catch(error =>{
+        this.error = error;
+        console.log('error ===>: ' + error.body.message);
+        })
+    }
+
+    handleClick(event) {
+        this.clickedButtonLabel = event.target.label;
+    }
+
+    handleSelectFieldToDisplay(event) { 
+        this.values = event.target.value;
+    }
+
+    openModal() {
+        // to open modal set isModalOpen tarck value as true
+        this.isModalOpen = true;
+    }
+    closeModal() {
+        // to close modal set isModalOpen tarck value as false
+        this.isModalOpen = false;
+    }
+    submitDetails() {
+        // to close modal set isModalOpen tarck value as false
+        //Add your code to call apex method or do some processing
+
+        objectRecords({selectedObject : this.selectedObj}).then(result=>{
+            var allValues = result;
+            //console.log('allValues--->' + JSON.stringify(allValues));
+
+            var objectValue = (allValues.sObjectData);
+
+            var size = Object.keys(objectValue).length;
+            console.log('size is ---> ', size, ' type of size is ', typeof size);
+            this.totalSize = size;
+            this.start=0;
+            this.end = this.pageSize - 1;
+
+            console.log('total records: objectValue--->' + JSON.stringify(objectValue));
+            this.data = objectValue;
+            this.allRecords = objectValue;
+            this.columns=[];
+
+            this.selectedflds = this.values;
+            //console.log('in line 101 selectedflds---> ' , this.selectedflds);
+            
+            for(let k of allValues.fieldList)
+            {
+                //console.log('k is --> ',k,'  label is -- > ',k.label);    
+                if(this.selectedflds.includes(k.apiName)){
+                    let obj = {
+                        label: k.label,
+                        fieldName: k.apiName, 
+                    };
+                    this.columns.push(obj);
+                }
+            }
+           // console.log('in line 105 --> ',this.columns);
+
+           var objectList = this.allRecords;
+           var paginationList = [];
+           for(var i=0; i< this.pageSize; i++){
+               paginationList.push(objectList[i]);
+           }
+           this.data = paginationList;
+         })
+         this.isModalOpen = false;
+    }
+
+    onSelectChange(event){
+        var selected = parseInt(event.target.value);
+        //console.log(selected);
+        //alert(typeof selected);
+        var paginationList = [];
+        //console.log('this data---> ', this.data);
+        var objectList = this.allRecords;
+        //console.log('in 119',  objectList);
+        for(let i=0; i< selected; i++){
+            paginationList.push(objectList[i]);
+        }
+        //console.log('in line 124',paginationList);
+        this.data = paginationList;
+    }
+    
+    first(event){
+        var objectList = this.allRecords;
+        var paginationList = [];
+        for(var i=0; i< this.pageSize; i++){
+            paginationList.push(objectList[i]);
+        }
+        this.data = paginationList;
+        // var oppList = component.get("v.opportunityList");
+        // var pageSize = component.get("v.pageSize");
+        // var paginationList = [];
+        // for(var i=0; i< pageSize; i++){
+        // paginationList.push(oppList[i]);
+        // }
+        // component.set('v.paginationList', paginationList);
+    }
+
+    last(event){
+        var objectList = this.allRecords;
+        var paginationList = [];
+        for(var i=this.totalSize-this.pageSize+1; i< this.totalSize; i++){
+            paginationList.push(objectList[i]);
+        }
+        this.data = paginationList;
+        // var oppList = component.get("v.opportunityList");
+        // var pageSize = component.get("v.pageSize");
+        // var totalSize = component.get("v.totalSize");
+        // var paginationList = [];
+        // for(var i=totalSize-pageSize+1; i< totalSize; i++){
+        // paginationList.push(oppList[i]);
+    }
+
+    next(event){
+        var objectList = this.allRecords;
+        var paginationList = [];
+        var counter = 0;
+        for(var i=this.end+1; i<this.end+this.pageSize+1; i++){
+            if(objectList.length > this.end){
+                paginationList.push(objectList[i]);
+                counter ++ ;
+            }
+        }
+        this.start = this.start + this.counter;
+        this.end = this.end + this.counter;
+        this.data = paginationList;
+        // var oppList = component.get("v.opportunityList");
+        // var end = component.get("v.end");
+        // var start = component.get("v.start");
+        // var pageSize = component.get("v.pageSize");
+        // var paginationList = [];
+        // var counter = 0;
+        // for(var i=end+1; i<end+pageSize+1; i++){
+        // if(oppList.length > end){
+        // paginationList.push(oppList[i]);
+        // counter ++ ;
+        // }
+        // }
+        // start = start + counter;
+        // end = end + counter;
+        // component.set("v.start",start);
+        // component.set("v.end",end);
+        // component.set('v.paginationList', paginationList);
+    }
+
+    previous(event){
+        var objectList = this.allRecords;
+        var paginationList = [];
+        var counter = 0;
+        for(var i= this.start-this.pageSize; i < this.start ; i++){
+            if(i > -1){
+                paginationList.push(objectList[i]);
+                counter ++;
+            }
+            else {
+                this.start++;
+            }
+        }
+        this.start = this.start - this.counter;
+        this.end = this.end - this.counter;
+        this.data = paginationList;
+        // var oppList = component.get("v.opportunityList");
+        // var end = component.get("v.end");
+        // var start = component.get("v.start");
+        // var pageSize = component.get("v.pageSize");
+        // var paginationList = [];
+        // var counter = 0;
+        // for(var i= start-pageSize; i < start ; i++){
+        //     if(i > -1){
+        //         paginationList.push(oppList[i]);
+        //         counter ++;
+        //     }
+        //     else {
+        //         start++;
+        //     }
+        // }
+        // start = start - counter;
+        // end = end - counter;
+        // component.set("v.start",start);
+        // component.set("v.end",end);
+        // component.set('v.paginationList', paginationList);
+    }
+}
